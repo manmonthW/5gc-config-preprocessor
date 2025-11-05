@@ -1,0 +1,136 @@
+# 配置预处理模块配置文件
+# 5GC项目配置文件处理设置
+
+# 文件处理设置
+file_processing:
+  max_file_size_mb: 500  # 最大文件大小(MB)
+  encoding_detection: true  # 自动检测文件编码
+  default_encoding: "utf-8"
+  supported_formats:
+    - xml
+    - json
+    - txt
+    - conf
+    - cfg
+    - log
+
+# 脱敏规则配置
+desensitization:
+  enabled: true
+  # 需要脱敏的模式
+  patterns:
+    # IP地址脱敏
+    ip_addresses:
+      pattern: '\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+      replacement: "xxx.xxx.xxx.xxx"
+      keep_subnet: true  # 保留子网信息
+    
+    # 手机号脱敏
+    phone_numbers:
+      pattern: '\b1[3-9]\d{9}\b'
+      replacement: "138****0000"
+    
+    # IMSI脱敏
+    imsi:
+      pattern: '\b\d{15}\b'
+      replacement: "IMSI_MASKED"
+    
+    # IMEI脱敏
+    imei:
+      pattern: '\b\d{15,17}\b'
+      replacement: "IMEI_MASKED"
+    
+    # 密码脱敏
+    passwords:
+      keywords:
+        - password
+        - passwd
+        - pwd
+        - secret
+        - key
+      replacement: "********"
+    
+    # 客户名称脱敏
+    customer_names:
+      keywords_file: "customer_keywords.txt"
+      replacement: "CUSTOMER_X"
+    
+    # URL脱敏（保留域名结构）
+    urls:
+      pattern: 'https?://[^\s]+'
+      keep_domain: true
+      replacement: "https://masked-domain.com/path"
+
+# 分块设置
+chunking:
+  enabled: true
+  strategy: "smart"  # smart, fixed_lines, fixed_size
+  chunk_size_lines: 5000  # 每块行数（fixed_lines策略）
+  chunk_size_kb: 1024  # 每块大小KB（fixed_size策略）
+  overlap_lines: 100  # 块之间重叠行数
+  
+  # 智能分块设置
+  smart_chunking:
+    # 配置段落标识
+    section_markers:
+      - "BEGIN"
+      - "END"
+      - "SECTION"
+      - "MODULE"
+      - "FEATURE"
+    # 保持完整性的配置块
+    preserve_blocks:
+      - pattern: '<.*?>.*?</.*?>'  # XML块
+      - pattern: '\{[^{}]*\}'  # JSON对象
+      - pattern: 'BEGIN.*?END'  # 配置块
+
+# 元数据提取规则
+metadata:
+  extract_project_info: true
+  extract_version: true
+  extract_timestamp: true
+  
+  # 项目信息模式
+  project_patterns:
+    - 'PROJECT:\s*(\S+)'
+    - 'Customer:\s*(\S+)'
+    - 'Site:\s*(\S+)'
+    - 'Region:\s*(\S+)'
+  
+  # 版本信息模式
+  version_patterns:
+    - 'Version:\s*(\S+)'
+    - 'Release:\s*(\S+)'
+    - 'Build:\s*(\S+)'
+  
+  # 时间戳模式
+  timestamp_patterns:
+    - '\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
+    - '\d{4}/\d{2}/\d{2}'
+
+# 输出设置
+output:
+  base_dir: "./output"
+  create_timestamp_folder: true
+  save_metadata: true
+  save_mapping: true
+  compression: false  # 是否压缩输出
+  
+  # 输出格式
+  formats:
+    processed: "json"  # 处理后的格式
+    keep_original: true  # 保留原始格式副本
+
+# 日志设置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "preprocessing.log"
+  console: true
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 性能设置
+performance:
+  parallel_processing: true
+  num_workers: 4
+  batch_size: 10
+  memory_limit_mb: 2048

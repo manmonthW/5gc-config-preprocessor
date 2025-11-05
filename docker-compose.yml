@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  preprocessor:
+    build: .
+    image: 5gc-config-preprocessor:latest
+    container_name: config_preprocessor
+    volumes:
+      # 输入文件目录
+      - ./input:/app/input
+      # 输出文件目录
+      - ./output:/app/output
+      # 配置文件
+      - ./config.yaml:/app/config.yaml
+      # 日志目录
+      - ./logs:/app/logs
+    environment:
+      - LOG_LEVEL=INFO
+      - MAX_WORKERS=4
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    # 如果需要处理特定文件，修改command
+    command: ["-i", "/app/input/sample_config.txt"]
+    
+  # 可选：添加Web界面服务
+  web-ui:
+    image: nginx:alpine
+    container_name: preprocessor_ui
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web:/usr/share/nginx/html
+      - ./output:/usr/share/nginx/html/output:ro
+    depends_on:
+      - preprocessor
+    restart: unless-stopped
+
+  # 可选：添加监控服务
+  monitoring:
+    image: grafana/grafana:latest
+    container_name: preprocessor_monitoring
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
+    restart: unless-stopped
+
+volumes:
+  grafana-storage:
+
+networks:
+  default:
+    name: preprocessor-network
