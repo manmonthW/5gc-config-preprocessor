@@ -162,7 +162,8 @@ class handler(BaseHTTPRequestHandler):
             # Create temporary file
             temp_file_path = None
             try:
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
+                original_suffix = Path(filename).suffix or '.txt'
+                with tempfile.NamedTemporaryFile(mode='w', suffix=original_suffix, delete=False) as temp_file:
                     temp_file.write(decoded_content)
                     temp_file_path = temp_file.name
                 

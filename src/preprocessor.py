@@ -41,6 +41,7 @@ class ProcessingResult:
     statistics: Dict
     errors: List[str]
     processing_time: float
+    message: str = ""
 
 class ConfigPreProcessor:
     """配置文件预处理器主类"""
@@ -264,7 +265,8 @@ class ConfigPreProcessor:
                 metadata=metadata,
                 statistics=self.statistics,
                 errors=errors,
-                processing_time=processing_time
+                processing_time=processing_time,
+                message=f"Processing completed successfully in {processing_time:.2f} seconds"
             )
             
         except Exception as e:
@@ -279,7 +281,8 @@ class ConfigPreProcessor:
                 metadata=metadata,
                 statistics=self.statistics,
                 errors=errors,
-                processing_time=(datetime.now() - start_time).total_seconds()
+                processing_time=(datetime.now() - start_time).total_seconds(),
+                message=f"Processing failed: {str(e)}"
             )
     
     def process_directory(self, directory_path: str, 
