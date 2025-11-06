@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "quick_start.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/quick_start.py"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "src"
+  },
+  "functions": {
+    "quick_start.py": {
+      "runtime": "python3.9"
+    }
+  }
+}

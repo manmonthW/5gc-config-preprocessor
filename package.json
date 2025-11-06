@@ -1,0 +1,33 @@
+{
+  "name": "5gc-config-preprocessor",
+  "version": "1.0.0",
+  "description": "5G Core Network configuration file preprocessing module",
+  "main": "api/index.py",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "python -m py_compile quick_start.py && python -m py_compile api/index.py",
+    "start": "python quick_start.py",
+    "test": "python tests/test_all.py"
+  },
+  "keywords": [
+    "5g",
+    "5gc",
+    "config",
+    "preprocessing",
+    "desensitization",
+    "telecom"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.x"
+  },
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/config_preprocessor.git"
+  },
+  "homepage": "https://config-preprocessor.vercel.app"
+}
