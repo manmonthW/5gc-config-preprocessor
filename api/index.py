@@ -5,6 +5,7 @@ import json
 import tempfile
 import base64
 import traceback
+import chardet
 from pathlib import Path
 from urllib.parse import parse_qs
 from datetime import datetime
@@ -148,12 +149,26 @@ class handler(BaseHTTPRequestHandler):
             
             # Decode base64 content
             try:
-                decoded_content = base64.b64decode(file_content).decode('utf-8')
+                decoded_bytes = base64.b64decode(file_content)
+                decoded_text = ""
+                detected_encoding = 'utf-8'
+                detected_confidence = 1.0
+                try:
+                    decoded_text = decoded_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    detection = chardet.detect(decoded_bytes)
+                    detected_encoding = detection.get('encoding') or 'utf-8'
+                    detected_confidence = detection.get('confidence', 0.0)
+                    decoded_text = decoded_bytes.decode(detected_encoding, errors='replace')
                 if DEBUG_AVAILABLE:
-                    api_logger.debug(f"File content decoded successfully", 
-                                   request_id=request_id,
-                                   decoded_length=len(decoded_content),
-                                   content_preview=decoded_content[:200] + "..." if len(decoded_content) > 200 else decoded_content)
+                    api_logger.debug(
+                        "File content decoded successfully",
+                        request_id=request_id,
+                        decoded_length=len(decoded_bytes),
+                        detected_encoding=detected_encoding,
+                        detected_confidence=detected_confidence,
+                        content_preview=decoded_text[:200] + "..." if len(decoded_text) > 200 else decoded_text
+                    )
             except Exception as decode_error:
                 if DEBUG_AVAILABLE:
                     api_logger.error(f"Base64 decoding failed", 
@@ -166,8 +181,8 @@ class handler(BaseHTTPRequestHandler):
             temp_file_path = None
             try:
                 original_suffix = Path(filename).suffix or '.txt'
-                with tempfile.NamedTemporaryFile(mode='w', suffix=original_suffix, delete=False) as temp_file:
-                    temp_file.write(decoded_content)
+                with tempfile.NamedTemporaryFile(mode='wb', suffix=original_suffix, delete=False) as temp_file:
+                    temp_file.write(decoded_bytes)
                     temp_file_path = temp_file.name
                 
                 if DEBUG_AVAILABLE:
@@ -275,19 +290,19 @@ class handler(BaseHTTPRequestHandler):
                         'processed_files': [f'demo_processed_{filename}'],
                         'metadata': {
                             'file_name': filename,
-                            'file_size': len(decoded_content),
+                            'file_size': len(decoded_bytes),
                             'processing_options': options,
                             'mode': 'demo'
                         },
                         'statistics': {
-                            'file_size_mb': len(decoded_content) / (1024 * 1024),
+                            'file_size_mb': len(decoded_bytes) / (1024 * 1024),
                             'desensitization': {
                                 'total_replacements': 0,
                                 'by_type': {}
                             }
                         },
                         'processed_content': {
-                            'demo_output.txt': decoded_content[:500] + '...' if len(decoded_content) > 500 else decoded_content
+                            'demo_output.txt': decoded_text[:500] + '...' if len(decoded_text) > 500 else decoded_text
                         },
                         'request_id': request_id,
                         'timestamp': datetime.now().isoformat(),
