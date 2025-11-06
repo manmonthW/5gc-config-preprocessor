@@ -4,103 +4,269 @@ import os
 import json
 import tempfile
 import base64
+import traceback
 from pathlib import Path
 from urllib.parse import parse_qs
+from datetime import datetime
 
-# Add src directory to Python path
+# Add debug and src directories to Python path
 current_dir = Path(__file__).parent
 src_dir = current_dir.parent / 'src'
+debug_dir = current_dir.parent / 'debug'
 sys.path.insert(0, str(src_dir))
+sys.path.insert(0, str(debug_dir))
+
+# Import debug system
+try:
+    from debug import api_logger, log_api_request, log_api_response, is_debug_enabled, get_debug_info
+    DEBUG_AVAILABLE = True
+except ImportError:
+    DEBUG_AVAILABLE = False
+    print("Debug system not available", file=sys.stderr)
 
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
+        try:
+            if DEBUG_AVAILABLE:
+                log_api_request("OPTIONS", self.path)
+            
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+            
+            if DEBUG_AVAILABLE:
+                log_api_response(200)
+                
+        except Exception as e:
+            if DEBUG_AVAILABLE:
+                api_logger.error("OPTIONS request failed", exception=e)
+            self.send_error_response(500, f"OPTIONS failed: {str(e)}")
 
     def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        
-        response = {
-            'message': '5GC Config Preprocessor API',
-            'version': '1.0.0',
-            'description': '5G Core Network configuration file preprocessing module',
-            'endpoints': {
-                'POST /api': 'Process configuration file',
-                'GET /api': 'API information'
-            },
-            'usage': {
-                'method': 'POST',
-                'body': {
-                    'file_content': 'base64 encoded file content',
-                    'filename': 'original filename',
-                    'options': {
-                        'desensitize': True,
-                        'convert_format': True,
-                        'chunk': True,
-                        'extract_metadata': True
+        try:
+            if DEBUG_AVAILABLE:
+                log_api_request("GET", self.path, headers=dict(self.headers))
+            
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            
+            response = {
+                'message': '5GC Config Preprocessor API',
+                'version': '1.0.0',
+                'description': '5G Core Network configuration file preprocessing module',
+                'timestamp': datetime.now().isoformat(),
+                'endpoints': {
+                    'POST /api': 'Process configuration file',
+                    'GET /api': 'API information',
+                    'GET /api/debug': 'Debug information (if enabled)'
+                },
+                'usage': {
+                    'method': 'POST',
+                    'body': {
+                        'file_content': 'base64 encoded file content',
+                        'filename': 'original filename',
+                        'options': {
+                            'desensitize': True,
+                            'convert_format': True,
+                            'chunk': True,
+                            'extract_metadata': True
+                        }
                     }
                 }
             }
-        }
-        
-        self.wfile.write(json.dumps(response, ensure_ascii=False, indent=2).encode('utf-8'))
+            
+            # Add debug info if available and requested
+            if DEBUG_AVAILABLE and self.path.endswith('/debug'):
+                response['debug_info'] = get_debug_info()
+                response['debug_available'] = True
+            elif DEBUG_AVAILABLE:
+                response['debug_available'] = True
+            else:
+                response['debug_available'] = False
+            
+            response_json = json.dumps(response, ensure_ascii=False, indent=2)
+            self.wfile.write(response_json.encode('utf-8'))
+            
+            if DEBUG_AVAILABLE:
+                log_api_response(200, f"Sent API info response ({len(response_json)} bytes)")
+                
+        except Exception as e:
+            if DEBUG_AVAILABLE:
+                api_logger.error("GET request failed", exception=e)
+            self.send_error_response(500, f"GET failed: {str(e)}")
 
     def do_POST(self):
+        request_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        
         try:
+            if DEBUG_AVAILABLE:
+                api_logger.info(f"Starting POST request processing", request_id=request_id)
+                log_api_request("POST", self.path, headers=dict(self.headers))
+            
             # Read request body
             content_length = int(self.headers.get('Content-Length', 0))
+            if DEBUG_AVAILABLE:
+                api_logger.debug(f"Request content length: {content_length}", request_id=request_id)
+            
             if content_length > 0:
                 body = self.rfile.read(content_length).decode('utf-8')
+                if DEBUG_AVAILABLE:
+                    api_logger.debug(f"Request body read successfully", 
+                                   request_id=request_id, 
+                                   body_length=len(body),
+                                   body_preview=body[:200] + "..." if len(body) > 200 else body)
                 data = json.loads(body)
             else:
-                raise ValueError("No request body")
+                raise ValueError("No request body provided")
             
-            # Get file content and options
+            # Extract and validate request data
             file_content = data.get('file_content', '')
             filename = data.get('filename', 'config.txt')
             options = data.get('options', {
                 'desensitize': True,
                 'convert_format': True,
-                'chunk': False,  # Disable chunking for web API
+                'chunk': False,
                 'extract_metadata': True
             })
             
+            if DEBUG_AVAILABLE:
+                api_logger.info(f"Processing file: {filename}", 
+                              request_id=request_id,
+                              filename=filename,
+                              options=options,
+                              content_length=len(file_content))
+            
             if not file_content:
-                self.send_error_response(400, 'file_content is required')
-                return
+                raise ValueError("file_content is required")
             
             # Decode base64 content
             try:
                 decoded_content = base64.b64decode(file_content).decode('utf-8')
-            except Exception as e:
-                self.send_error_response(400, 'Invalid base64 file content')
-                return
+                if DEBUG_AVAILABLE:
+                    api_logger.debug(f"File content decoded successfully", 
+                                   request_id=request_id,
+                                   decoded_length=len(decoded_content),
+                                   content_preview=decoded_content[:200] + "..." if len(decoded_content) > 200 else decoded_content)
+            except Exception as decode_error:
+                if DEBUG_AVAILABLE:
+                    api_logger.error(f"Base64 decoding failed", 
+                                   request_id=request_id,
+                                   exception=decode_error,
+                                   content_sample=file_content[:100] if file_content else "empty")
+                raise ValueError(f"Invalid base64 file content: {str(decode_error)}")
             
             # Create temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
-                temp_file.write(decoded_content)
-                temp_file_path = temp_file.name
-            
+            temp_file_path = None
             try:
-                # Import and use preprocessor
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
+                    temp_file.write(decoded_content)
+                    temp_file_path = temp_file.name
+                
+                if DEBUG_AVAILABLE:
+                    api_logger.debug(f"Temporary file created", 
+                                   request_id=request_id,
+                                   temp_path=temp_file_path)
+                
+                # Try to import and use preprocessor
                 try:
+                    if DEBUG_AVAILABLE:
+                        api_logger.debug(f"Attempting to import preprocessor", request_id=request_id)
+                    
                     from preprocessor import ConfigPreProcessor
-                except ImportError:
-                    # Fallback: create a simple response
+                    
+                    if DEBUG_AVAILABLE:
+                        api_logger.info(f"Preprocessor imported successfully", request_id=request_id)
+                    
+                    # Find config file
+                    config_path = src_dir / 'config.yaml'
+                    if not config_path.exists():
+                        config_path = current_dir.parent / 'config.yaml'
+                    
+                    if DEBUG_AVAILABLE:
+                        api_logger.debug(f"Using config file", 
+                                       request_id=request_id,
+                                       config_path=str(config_path),
+                                       config_exists=config_path.exists())
+                    
+                    # Initialize preprocessor
+                    preprocessor = ConfigPreProcessor(str(config_path))
+                    
+                    if DEBUG_AVAILABLE:
+                        api_logger.info(f"ConfigPreProcessor initialized", request_id=request_id)
+                    
+                    # Process the file
+                    result = preprocessor.process_file(
+                        temp_file_path,
+                        desensitize=options.get('desensitize', True),
+                        convert_format=options.get('convert_format', True),
+                        chunk=options.get('chunk', False),
+                        extract_metadata=options.get('extract_metadata', True)
+                    )
+                    
+                    if DEBUG_AVAILABLE:
+                        api_logger.info(f"File processing completed", 
+                                      request_id=request_id,
+                                      success=result.success,
+                                      message=result.message,
+                                      processed_files_count=len(result.processed_files) if result.processed_files else 0)
+                    
+                    response_data = {
+                        'success': result.success,
+                        'message': result.message,
+                        'processed_files': result.processed_files,
+                        'metadata': result.metadata,
+                        'statistics': result.statistics,
+                        'request_id': request_id,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    
+                    # Read processed content if available
+                    if result.success and result.processed_files:
+                        processed_content = {}
+                        for file_path in result.processed_files[:3]:  # Limit to first 3 files
+                            try:
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                    processed_content[Path(file_path).name] = content
+                                    if DEBUG_AVAILABLE:
+                                        api_logger.debug(f"Read processed file", 
+                                                       request_id=request_id,
+                                                       file_name=Path(file_path).name,
+                                                       content_length=len(content))
+                            except Exception as read_error:
+                                if DEBUG_AVAILABLE:
+                                    api_logger.warning(f"Failed to read processed file", 
+                                                     request_id=request_id,
+                                                     file_path=file_path,
+                                                     exception=read_error)
+                                continue
+                        response_data['processed_content'] = processed_content
+                    
+                    self.send_success_response(response_data)
+                    
+                    if DEBUG_AVAILABLE:
+                        log_api_response(200, f"Processing successful for {filename}")
+                    
+                except ImportError as import_error:
+                    if DEBUG_AVAILABLE:
+                        api_logger.warning(f"Preprocessor import failed, using demo mode", 
+                                         request_id=request_id,
+                                         exception=import_error)
+                    
+                    # Fallback: create a demo response
                     response_data = {
                         'success': True,
-                        'message': 'File processed successfully (demo mode)',
-                        'processed_files': [f'processed_{filename}'],
+                        'message': 'File processed successfully (demo mode - preprocessor not available)',
+                        'processed_files': [f'demo_processed_{filename}'],
                         'metadata': {
                             'file_name': filename,
                             'file_size': len(decoded_content),
-                            'processing_options': options
+                            'processing_options': options,
+                            'mode': 'demo'
                         },
                         'statistics': {
                             'file_size_mb': len(decoded_content) / (1024 * 1024),
@@ -111,69 +277,89 @@ class handler(BaseHTTPRequestHandler):
                         },
                         'processed_content': {
                             'demo_output.txt': decoded_content[:500] + '...' if len(decoded_content) > 500 else decoded_content
+                        },
+                        'request_id': request_id,
+                        'timestamp': datetime.now().isoformat(),
+                        'debug_info': {
+                            'import_error': str(import_error),
+                            'python_path': sys.path,
+                            'current_dir': str(current_dir),
+                            'src_dir': str(src_dir)
                         }
                     }
+                    
                     self.send_success_response(response_data)
-                    return
-                
-                # Process the file
-                config_path = src_dir / 'config.yaml'
-                if not config_path.exists():
-                    config_path = current_dir.parent / 'config.yaml'
-                
-                preprocessor = ConfigPreProcessor(str(config_path))
-                
-                result = preprocessor.process_file(
-                    temp_file_path,
-                    desensitize=options.get('desensitize', True),
-                    convert_format=options.get('convert_format', True),
-                    chunk=options.get('chunk', False),
-                    extract_metadata=options.get('extract_metadata', True)
-                )
-                
-                response_data = {
-                    'success': result.success,
-                    'message': result.message,
-                    'processed_files': result.processed_files,
-                    'metadata': result.metadata,
-                    'statistics': result.statistics
-                }
-                
-                # Read processed content if available
-                if result.success and result.processed_files:
-                    processed_content = {}
-                    for file_path in result.processed_files[:3]:  # Limit to first 3 files
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
-                                processed_content[Path(file_path).name] = content
-                        except:
-                            continue
-                    response_data['processed_content'] = processed_content
-                
-                self.send_success_response(response_data)
+                    
+                    if DEBUG_AVAILABLE:
+                        log_api_response(200, f"Demo mode processing for {filename}")
                 
             finally:
                 # Clean up temporary file
-                try:
-                    os.unlink(temp_file_path)
-                except:
-                    pass
+                if temp_file_path:
+                    try:
+                        os.unlink(temp_file_path)
+                        if DEBUG_AVAILABLE:
+                            api_logger.debug(f"Temporary file cleaned up", 
+                                           request_id=request_id,
+                                           temp_path=temp_file_path)
+                    except Exception as cleanup_error:
+                        if DEBUG_AVAILABLE:
+                            api_logger.warning(f"Failed to cleanup temporary file", 
+                                             request_id=request_id,
+                                             temp_path=temp_file_path,
+                                             exception=cleanup_error)
             
         except Exception as e:
-            self.send_error_response(500, f'Processing failed: {str(e)}')
+            error_details = {
+                'request_id': request_id,
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            if DEBUG_AVAILABLE:
+                error_details['traceback'] = traceback.format_exc()
+                api_logger.error(f"POST request processing failed", 
+                               request_id=request_id,
+                               exception=e,
+                               **error_details)
+            
+            self.send_error_response(500, f'Processing failed: {str(e)}', error_details)
 
     def send_success_response(self, data):
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        self.wfile.write(json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8'))
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            response_json = json.dumps(data, ensure_ascii=False, indent=2)
+            self.wfile.write(response_json.encode('utf-8'))
+        except Exception as e:
+            if DEBUG_AVAILABLE:
+                api_logger.error("Failed to send success response", exception=e)
 
-    def send_error_response(self, status_code, error_message):
-        self.send_response(status_code)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        error_data = {'error': error_message}
-        self.wfile.write(json.dumps(error_data).encode('utf-8'))
+    def send_error_response(self, status_code, error_message, error_details=None):
+        try:
+            self.send_response(status_code)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            
+            error_data = {
+                'error': error_message,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            if error_details:
+                error_data['details'] = error_details
+            
+            if DEBUG_AVAILABLE:
+                error_data['debug_enabled'] = True
+                log_api_response(status_code, error_message)
+            else:
+                error_data['debug_enabled'] = False
+            
+            self.wfile.write(json.dumps(error_data, ensure_ascii=False, indent=2).encode('utf-8'))
+        except Exception as e:
+            if DEBUG_AVAILABLE:
+                api_logger.critical("Failed to send error response", exception=e)

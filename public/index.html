@@ -428,9 +428,14 @@
             resultDiv.style.display = 'none';
             processBtn.disabled = true;
 
+            const startTime = performance.now();
+            
             try {
+                console.log('开始处理文件:', selectedFile.name);
+                
                 // Convert file to base64
                 const fileContent = await fileToBase64(selectedFile);
+                console.log('文件转换为Base64完成, 长度:', fileContent.length);
                 
                 // Prepare options
                 const options = {
@@ -439,8 +444,11 @@
                     chunk: document.getElementById('chunk').checked,
                     extract_metadata: document.getElementById('metadata').checked
                 };
+                
+                console.log('处理选项:', options);
 
                 // Send request to API
+                console.log('发送API请求到 /api');
                 const response = await fetch('/api', {
                     method: 'POST',
                     headers: {
@@ -453,22 +461,57 @@
                     })
                 });
 
+                console.log('API响应状态:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
+                console.log('API响应数据:', data);
 
                 // Hide loading
                 loadingDiv.style.display = 'none';
+
+                const endTime = performance.now();
+                const processingTime = ((endTime - startTime) / 1000).toFixed(2);
+                
+                // Add timing info to response
+                data.client_info = {
+                    processing_time_seconds: processingTime,
+                    file_size_mb: (selectedFile.size / 1024 / 1024).toFixed(2),
+                    upload_time: new Date().toISOString()
+                };
 
                 // Show result
                 if (data.success) {
                     showResult(data, 'success');
                 } else {
-                    showResult({error: data.message || '处理失败'}, 'error');
+                    showResult(data, 'error');
                 }
 
             } catch (error) {
+                console.error('处理失败:', error);
+                
                 // Hide loading
                 loadingDiv.style.display = 'none';
-                showResult({error: '请求失败: ' + error.message}, 'error');
+                
+                const endTime = performance.now();
+                const processingTime = ((endTime - startTime) / 1000).toFixed(2);
+                
+                showResult({
+                    error: '请求失败: ' + error.message,
+                    details: {
+                        error_type: error.name,
+                        processing_time_seconds: processingTime,
+                        file_info: {
+                            name: selectedFile.name,
+                            size: selectedFile.size,
+                            type: selectedFile.type
+                        },
+                        timestamp: new Date().toISOString()
+                    }
+                }, 'error');
             }
 
             processBtn.disabled = false;
@@ -493,6 +536,18 @@
             if (type === 'success') {
                 let html = '<h3>✅ 处理成功！</h3>';
                 
+                // Show request ID if available
+                if (data.request_id) {
+                    html += `<p><strong>请求ID:</strong> <code>${data.request_id}</code></p>`;
+                }
+                
+                // Show timing information
+                if (data.client_info) {
+                    html += '<h4>⏱️ 处理信息：</h4>';
+                    html += `<p>处理时间: ${data.client_info.processing_time_seconds} 秒</p>`;
+                    html += `<p>文件大小: ${data.client_info.file_size_mb} MB</p>`;
+                }
+                
                 if (data.statistics) {
                     html += '<h4>📊 统计信息：</h4>';
                     html += `<p>文件大小: ${data.statistics.file_size_mb || 'N/A'} MB</p>`;
@@ -503,20 +558,84 @@
                 
                 if (data.metadata) {
                     html += '<h4>📋 元数据：</h4>';
-                    html += `<pre>${JSON.stringify(data.metadata, null, 2)}</pre>`;
+                    html += `<pre style="max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 5px;">${JSON.stringify(data.metadata, null, 2)}</pre>`;
                 }
                 
                 if (data.processed_content) {
                     html += '<h4>📄 处理结果预览：</h4>';
                     for (const [filename, content] of Object.entries(data.processed_content)) {
                         html += `<h5>${filename}:</h5>`;
-                        html += `<pre style="max-height: 200px; overflow-y: auto; background: white; padding: 10px; border-radius: 5px;">${content.substring(0, 1000)}${content.length > 1000 ? '...' : ''}</pre>`;
+                        html += `<pre style="max-height: 200px; overflow-y: auto; background: white; padding: 10px; border-radius: 5px; border: 1px solid #dee2e6;">${content.substring(0, 1000)}${content.length > 1000 ? '...' : ''}</pre>`;
                     }
+                }
+                
+                // Show debug info if available
+                if (data.debug_info) {
+                    html += '<details style="margin-top: 20px;"><summary><h4 style="display: inline;">🔧 调试信息</h4></summary>';
+                    html += `<pre style="background: #f8f9fa; padding: 10px; border-radius: 5px; font-size: 12px;">${JSON.stringify(data.debug_info, null, 2)}</pre>`;
+                    html += '</details>';
                 }
                 
                 resultDiv.innerHTML = html;
             } else {
-                resultDiv.innerHTML = `<h3>❌ 处理失败</h3><p>${data.error}</p>`;
+                let html = '<h3>❌ 处理失败</h3>';
+                html += `<p><strong>错误信息:</strong> ${data.error}</p>`;
+                
+                // Show request ID if available
+                if (data.request_id) {
+                    html += `<p><strong>请求ID:</strong> <code>${data.request_id}</code></p>`;
+                }
+                
+                // Show error details
+                if (data.details) {
+                    html += '<h4>🔍 错误详情：</h4>';
+                    html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #dc3545;">';
+                    
+                    if (data.details.error_type) {
+                        html += `<p><strong>错误类型:</strong> ${data.details.error_type}</p>`;
+                    }
+                    
+                    if (data.details.processing_time_seconds) {
+                        html += `<p><strong>处理时间:</strong> ${data.details.processing_time_seconds} 秒</p>`;
+                    }
+                    
+                    if (data.details.file_info) {
+                        html += `<p><strong>文件信息:</strong></p>`;
+                        html += `<ul>`;
+                        html += `<li>名称: ${data.details.file_info.name}</li>`;
+                        html += `<li>大小: ${(data.details.file_info.size / 1024 / 1024).toFixed(2)} MB</li>`;
+                        html += `<li>类型: ${data.details.file_info.type || '未知'}</li>`;
+                        html += `</ul>`;
+                    }
+                    
+                    if (data.details.traceback) {
+                        html += `<details><summary>技术详情 (堆栈跟踪)</summary>`;
+                        html += `<pre style="font-size: 11px; background: white; padding: 10px; border-radius: 3px; overflow-x: auto;">${data.details.traceback}</pre>`;
+                        html += `</details>`;
+                    }
+                    
+                    html += '</div>';
+                }
+                
+                // Show debug info if available
+                if (data.debug_info) {
+                    html += '<details style="margin-top: 20px;"><summary><h4 style="display: inline;">🔧 调试信息</h4></summary>';
+                    html += `<pre style="background: #f8f9fa; padding: 10px; border-radius: 5px; font-size: 12px;">${JSON.stringify(data.debug_info, null, 2)}</pre>`;
+                    html += '</details>';
+                }
+                
+                // Add troubleshooting tips
+                html += '<div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">';
+                html += '<h5>💡 故障排除建议：</h5>';
+                html += '<ul>';
+                html += '<li>检查文件格式是否正确 (支持 YAML, XML, JSON, INI, TXT)</li>';
+                html += '<li>确保文件内容为有效的配置格式</li>';
+                html += '<li>检查文件大小是否超出限制</li>';
+                html += '<li>如果问题持续，请查看浏览器控制台的详细错误信息</li>';
+                html += '</ul>';
+                html += '</div>';
+                
+                resultDiv.innerHTML = html;
             }
             
             resultDiv.style.display = 'block';
