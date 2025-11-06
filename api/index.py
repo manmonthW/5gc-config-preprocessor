@@ -16,6 +16,9 @@ debug_dir = current_dir.parent / 'debug'
 sys.path.insert(0, str(src_dir))
 sys.path.insert(0, str(debug_dir))
 
+MAX_PREVIEW_CHARS = 200_000  # limit processed content preview
+MAX_PREVIEW_FILES = 3
+
 # Import debug system
 try:
     from debug import api_logger, log_api_request, log_api_response, is_debug_enabled, get_debug_info
@@ -228,15 +231,22 @@ class handler(BaseHTTPRequestHandler):
                     # Read processed content if available
                     if result.success and result.processed_files:
                         processed_content = {}
-                        for file_path in result.processed_files[:3]:  # Limit to first 3 files
+                        for file_path in result.processed_files[:MAX_PREVIEW_FILES]:
                             try:
-                                with open(file_path, 'r', encoding='utf-8') as f:
-                                    content = f.read()
-                                    processed_content[Path(file_path).name] = content
+                                file_path_obj = Path(file_path)
+                                if file_path_obj.is_dir():
+                                    continue
+                                size_bytes = file_path_obj.stat().st_size
+                                with open(file_path_obj, 'r', encoding='utf-8', errors='replace') as f:
+                                    content = f.read(MAX_PREVIEW_CHARS)
+                                    if size_bytes > MAX_PREVIEW_CHARS:
+                                        remaining = size_bytes - MAX_PREVIEW_CHARS
+                                        content += f"\n\n...[truncated {remaining} bytes]"
+                                    processed_content[file_path_obj.name] = content
                                     if DEBUG_AVAILABLE:
                                         api_logger.debug(f"Read processed file", 
                                                        request_id=request_id,
-                                                       file_name=Path(file_path).name,
+                                                       file_name=file_path_obj.name,
                                                        content_length=len(content))
                             except Exception as read_error:
                                 if DEBUG_AVAILABLE:

@@ -1,4 +1,16 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "functions": {
+    "api/index.py": {
+      "runtime": "python3.11",
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/simple.py": {
+      "runtime": "python3.11",
+      "memory": 512,
+      "maxDuration": 30
+    }
+  }
 }
