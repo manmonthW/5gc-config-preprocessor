@@ -5,7 +5,8 @@
   "main": "api/index.py",
   "scripts": {
     "dev": "vercel dev",
-    "build": "echo 'Build complete - static files ready'",
+    "build": "npm run build:frontend",
+    "build:frontend": "echo 'Build complete - static files ready'",
     "start": "python quick_start.py",
     "test": "python tests/test_all.py"
   },
