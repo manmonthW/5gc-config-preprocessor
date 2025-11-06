@@ -21,6 +21,8 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
+from utils import resolve_config_path
+
 logger = logging.getLogger(__name__)
 
 class ConfigFormat(Enum):
@@ -47,7 +49,8 @@ class FormatConverter:
     
     def __init__(self, config_path: str = "config.yaml"):
         """初始化转换器"""
-        with open(config_path, 'r', encoding='utf-8') as f:
+        self.config_path = resolve_config_path(config_path)
+        with open(self.config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
         
         self.supported_formats = self.config['file_processing']['supported_formats']

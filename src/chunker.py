@@ -10,6 +10,8 @@ import logging
 import yaml
 from pathlib import Path
 
+from utils import resolve_config_path
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -29,7 +31,8 @@ class SmartChunker:
     
     def __init__(self, config_path: str = "config.yaml"):
         """初始化分块器"""
-        with open(config_path, 'r', encoding='utf-8') as f:
+        self.config_path = resolve_config_path(config_path)
+        with open(self.config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
         self.config = config.get('chunking', {})
@@ -89,111 +92,121 @@ class SmartChunker:
         基于配置结构和语义边界进行分块
         """
         lines = text.split('\n')
-        chunks = []
-        
+        total_lines = len(lines)
+        chunks: List[ConfigChunk] = []
+
         # 1. 识别配置段落
         sections = self._identify_sections(lines)
         logger.info(f"识别到 {len(sections)} 个配置段落")
-        
+
         # 2. 识别需要保留完整的块
         preserve_blocks = self._identify_preserve_blocks(lines)
         logger.info(f"识别到 {len(preserve_blocks)} 个需要保留完整的块")
-        
-        # 3. 基于段落和保留块进行分块
-        current_chunk_lines = []
-        current_chunk_start = 1
+        # 将保留块转换为0基索引
+        preserve_ranges = [(start - 1, end - 1) for start, end in preserve_blocks]
+
+        current_chunk_lines: List[str] = []
         current_features = set()
+        current_chunk_start = 1  # 1-based
+        last_line_no_added = current_chunk_start - 1
         chunk_id = 0
-        
-        for line_no, line in enumerate(lines, 1):
-            # 检查是否在保留块内
-            in_preserve_block = False
-            for block_start, block_end in preserve_blocks:
-                if block_start <= line_no <= block_end:
-                    in_preserve_block = True
-                    # 如果当前块会超过大小限制，先保存当前块
-                    if (len(current_chunk_lines) > 0 and 
-                        len(current_chunk_lines) + (block_end - block_start + 1) > self.chunk_size_lines):
-                        # 保存当前块
-                        chunk = self._create_chunk(
-                            chunk_id, 
-                            current_chunk_start,
-                            line_no - 1,
-                            current_chunk_lines,
-                            list(current_features)
-                        )
-                        chunks.append(chunk)
-                        chunk_id += 1
-                        current_chunk_lines = []
-                        current_chunk_start = line_no
-                        current_features = set()
-                    
-                    # 添加整个保留块
-                    for i in range(block_start - 1, block_end):
-                        if i < len(lines):
-                            current_chunk_lines.append(lines[i])
-                            # 提取特征
-                            features = self._extract_features(lines[i])
-                            current_features.update(features)
-                    
-                    # 跳过已处理的行
-                    line_no = block_end
-                    break
-            
-            if not in_preserve_block:
-                current_chunk_lines.append(line)
-                
-                # 提取特征
-                features = self._extract_features(line)
-                current_features.update(features)
-                
-                # 检查是否需要创建新块
-                should_split = False
-                
-                # 条件1: 达到大小限制
-                if len(current_chunk_lines) >= self.chunk_size_lines:
-                    should_split = True
-                
-                # 条件2: 遇到主要段落标记
-                for marker in self.section_markers:
-                    if marker in line and len(current_chunk_lines) > self.chunk_size_lines // 2:
-                        should_split = True
-                        break
-                
-                if should_split:
-                    # 创建块
-                    chunk = self._create_chunk(
-                        chunk_id,
-                        current_chunk_start,
-                        line_no,
-                        current_chunk_lines,
-                        list(current_features)
-                    )
-                    chunks.append(chunk)
-                    chunk_id += 1
-                    
-                    # 添加重叠
-                    overlap_start = max(0, len(current_chunk_lines) - self.overlap_lines)
-                    current_chunk_lines = current_chunk_lines[overlap_start:]
-                    current_chunk_start = line_no - len(current_chunk_lines) + 1
-                    current_features = set()
-                    
-                    # 重新提取重叠部分的特征
-                    for overlap_line in current_chunk_lines:
-                        features = self._extract_features(overlap_line)
-                        current_features.update(features)
-        
-        # 保存最后一个块
-        if current_chunk_lines:
+        processed_blocks = set()
+
+        def flush_chunk(add_overlap: bool):
+            nonlocal current_chunk_lines, current_features, current_chunk_start
+            nonlocal chunk_id, last_line_no_added
+            if not current_chunk_lines:
+                return
             chunk = self._create_chunk(
                 chunk_id,
                 current_chunk_start,
-                len(lines),
+                last_line_no_added,
                 current_chunk_lines,
                 list(current_features)
             )
             chunks.append(chunk)
-        
+            chunk_id += 1
+
+            if add_overlap and self.overlap_lines > 0:
+                overlap_count = min(self.overlap_lines, len(current_chunk_lines) - 1)
+                if overlap_count > 0:
+                    overlap_lines = current_chunk_lines[-overlap_count:]
+                    current_chunk_start = last_line_no_added - overlap_count + 1
+                    current_chunk_lines = overlap_lines.copy()
+                    current_features = set()
+                    for overlap_line in current_chunk_lines:
+                        current_features.update(self._extract_features(overlap_line))
+                    last_line_no_added = current_chunk_start + len(current_chunk_lines) - 1
+                else:
+                    current_chunk_lines = []
+                    current_features = set()
+                    current_chunk_start = last_line_no_added + 1
+                    last_line_no_added = current_chunk_start - 1
+            else:
+                current_chunk_lines = []
+                current_features = set()
+                current_chunk_start = last_line_no_added + 1
+                last_line_no_added = current_chunk_start - 1
+
+        i = 0
+        while i < total_lines:
+            line_no = i + 1
+
+            # 检查当前行是否处于保留块中
+            block_idx = None
+            block_range = None
+            for idx, (start_idx, end_idx) in enumerate(preserve_ranges):
+                if start_idx <= i <= end_idx:
+                    block_idx = idx
+                    block_range = (start_idx, end_idx)
+                    break
+
+            if block_range is not None and block_idx is not None:
+                start_idx, end_idx = block_range
+                block_len = end_idx - start_idx + 1
+
+                if block_idx not in processed_blocks:
+                    if current_chunk_lines and len(current_chunk_lines) + block_len > self.chunk_size_lines:
+                        flush_chunk(add_overlap=True)
+
+                    if not current_chunk_lines:
+                        current_chunk_start = start_idx + 1
+
+                    for j in range(start_idx, end_idx + 1):
+                        line = lines[j]
+                        current_chunk_lines.append(line)
+                        current_features.update(self._extract_features(line))
+                        last_line_no_added = j + 1
+
+                    processed_blocks.add(block_idx)
+
+                i = end_idx + 1
+                continue
+
+            # 普通行处理
+            if not current_chunk_lines:
+                current_chunk_start = line_no
+
+            line = lines[i]
+            current_chunk_lines.append(line)
+            current_features.update(self._extract_features(line))
+            last_line_no_added = line_no
+
+            should_split = len(current_chunk_lines) >= self.chunk_size_lines
+
+            if not should_split:
+                for marker in self.section_markers:
+                    if marker in line and len(current_chunk_lines) > self.chunk_size_lines // 2:
+                        should_split = True
+                        break
+
+            if should_split:
+                flush_chunk(add_overlap=True)
+
+            i += 1
+
+        flush_chunk(add_overlap=False)
+
         logger.info(f"智能分块完成，共生成 {len(chunks)} 个块")
         return chunks
     

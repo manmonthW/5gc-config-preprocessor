@@ -11,6 +11,8 @@ from pathlib import Path
 import yaml
 import logging
 
+from utils import resolve_config_path
+
 logger = logging.getLogger(__name__)
 
 class ConfigDesensitizer:
@@ -23,7 +25,8 @@ class ConfigDesensitizer:
         Args:
             config_path: 配置文件路径
         """
-        self.config = self._load_config(config_path)
+        self.config_path = resolve_config_path(config_path)
+        self.config = self._load_config(self.config_path)
         self.patterns = self._compile_patterns()
         self.mapping = {}  # 脱敏映射表
         self.statistics = {
@@ -31,7 +34,7 @@ class ConfigDesensitizer:
             'by_type': {}
         }
     
-    def _load_config(self, config_path: str) -> Dict:
+    def _load_config(self, config_path: Path) -> Dict:
         """加载配置文件"""
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)

@@ -10,6 +10,8 @@ from datetime import datetime
 import logging
 from collections import Counter
 
+from utils import resolve_config_path
+
 logger = logging.getLogger(__name__)
 
 class MetadataExtractor:
@@ -17,7 +19,8 @@ class MetadataExtractor:
     
     def __init__(self, config_path: str = "config.yaml"):
         """初始化元数据提取器"""
-        with open(config_path, 'r', encoding='utf-8') as f:
+        self.config_path = resolve_config_path(config_path)
+        with open(self.config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
         self.config = config.get('metadata', {})

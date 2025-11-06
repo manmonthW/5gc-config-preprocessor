@@ -22,6 +22,7 @@ from desensitizer import ConfigDesensitizer
 from format_converter import FormatConverter
 from chunker import SmartChunker
 from metadata_extractor import MetadataExtractor
+from utils import resolve_config_path
 
 # 配置日志
 logging.basicConfig(
@@ -53,7 +54,7 @@ class ConfigPreProcessor:
         Args:
             config_path: 配置文件路径
         """
-        self.config_path = Path(config_path).resolve()
+        self.config_path = resolve_config_path(config_path)
         self.config = self._load_config(self.config_path)
         
         # 初始化各个组件
@@ -137,36 +138,35 @@ class ConfigPreProcessor:
             # 获取文件信息
             file_size_mb = file_path.stat().st_size / (1024 * 1024)
             logger.info(f"开始处理文件: {file_path} (大小: {file_size_mb:.2f} MB)")
-            
+
+            # 读取原始内容（保持格式）
+            original_text = self.converter.read_file(str(file_path))
+            detected_format = self.converter.detect_format(str(file_path))
+
             # 创建文件专属输出目录
             file_output_dir = self.output_dir / file_path.stem
             file_output_dir.mkdir(exist_ok=True)
-            
+
+            unified = None
+
             # Step 1: 格式检测和转换
             if convert_format:
                 logger.info("Step 1: 格式转换...")
                 unified = self.converter.process_file(str(file_path))
                 original_format = unified['metadata']['original_format']
-                
+
                 # 保存统一格式
                 unified_file = file_output_dir / f"{file_path.stem}_unified.json"
                 self.converter.save_unified(unified, str(unified_file))
                 processed_files.append(str(unified_file))
                 logger.info(f"  ✓ 格式转换完成: {original_format} -> unified")
             else:
-                # 直接读取文件
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                original_format = self.converter.detect_format(str(file_path)).value
-                unified = {'config': {'content': content}}
+                original_format = detected_format.value
             
             # Step 2: 元数据提取
             if extract_metadata:
                 logger.info("Step 2: 元数据提取...")
-                # 从原始文件提取
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    raw_content = f.read()
-                metadata = self.metadata_extractor.extract(raw_content)
+                metadata = self.metadata_extractor.extract(original_text)
                 
                 # 保存元数据
                 metadata_file = file_output_dir / f"{file_path.stem}_metadata.json"
@@ -178,44 +178,34 @@ class ConfigPreProcessor:
             # Step 3: 脱敏处理
             if desensitize:
                 logger.info("Step 3: 脱敏处理...")
-                # 获取要脱敏的内容
-                if convert_format:
-                    # 将统一格式转回文本进行脱敏
-                    content = self._unified_to_text(unified)
-                else:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                
-                # 执行脱敏
+
+                # 执行脱敏（基于原始文本，保持格式）
                 desensitized_content, desensitize_mapping = \
-                    self.desensitizer.desensitize_text(content)
-                
+                    self.desensitizer.desensitize_text(original_text)
+
                 # 保存脱敏后的内容
                 desensitized_file = file_output_dir / f"{file_path.stem}_desensitized.txt"
                 with open(desensitized_file, 'w', encoding='utf-8') as f:
                     f.write(desensitized_content)
                 processed_files.append(str(desensitized_file))
-                
+
                 # 保存脱敏映射
                 mapping_file = file_output_dir / f"{file_path.stem}_desensitize_mapping.json"
                 with open(mapping_file, 'w', encoding='utf-8') as f:
                     json.dump(desensitize_mapping, f, ensure_ascii=False, indent=2)
                 processed_files.append(str(mapping_file))
-                
+
                 desensitize_stats = self.desensitizer.get_statistics()
                 logger.info(f"  ✓ 脱敏完成: {desensitize_stats['total_replacements']} 处替换")
-                
-                # 更新内容为脱敏后的版本
-                content = desensitized_content
+
+                content_for_chunking = desensitized_content
             else:
-                if not convert_format:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
+                content_for_chunking = original_text
             
             # Step 4: 智能分块
             if chunk:
                 logger.info("Step 4: 智能分块...")
-                chunks = self.chunker.chunk_text(content)
+                chunks = self.chunker.chunk_text(content_for_chunking)
                 
                 # 保存分块
                 chunks_dir = file_output_dir / "chunks"
