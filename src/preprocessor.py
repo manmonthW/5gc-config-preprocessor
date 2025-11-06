@@ -7,16 +7,20 @@ import os
 import json
 import yaml
 import logging
+import tempfile
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, asdict
-import hashlib
-from tqdm import tqdm
+from typing import Dict, List, Any
+from dataclasses import dataclass
+try:
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover - fallback when tqdm unavailable
+    def tqdm(iterable, **kwargs):
+        return iterable
 
 from desensitizer import ConfigDesensitizer
-from format_converter import FormatConverter, ConfigFormat
-from chunker import SmartChunker, ConfigChunk
+from format_converter import FormatConverter
+from chunker import SmartChunker
 from metadata_extractor import MetadataExtractor
 
 # 配置日志
@@ -48,23 +52,21 @@ class ConfigPreProcessor:
         Args:
             config_path: 配置文件路径
         """
-        self.config = self._load_config(config_path)
+        self.config_path = Path(config_path).resolve()
+        self.config = self._load_config(self.config_path)
         
         # 初始化各个组件
-        self.desensitizer = ConfigDesensitizer(config_path)
-        self.converter = FormatConverter(config_path)
-        self.chunker = SmartChunker(config_path)
-        self.metadata_extractor = MetadataExtractor(config_path)
+        config_path_str = str(self.config_path)
+        self.desensitizer = ConfigDesensitizer(config_path_str)
+        self.converter = FormatConverter(config_path_str)
+        self.chunker = SmartChunker(config_path_str)
+        self.metadata_extractor = MetadataExtractor(config_path_str)
         
-        # 设置输出目录
-        self.output_base = Path(self.config['output']['base_dir'])
-        if self.config['output']['create_timestamp_folder']:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            self.output_dir = self.output_base / timestamp
-        else:
-            self.output_dir = self.output_base
-        
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # 设置输出目录（在只读环境中回退到临时目录）
+        output_settings = self.config.get('output', {})
+        base_dir = output_settings.get('base_dir', './output')
+        use_timestamp = output_settings.get('create_timestamp_folder', True)
+        self.output_base, self.output_dir = self._prepare_output_directory(base_dir, use_timestamp)
         
         # 初始化统计信息
         self.statistics = {
@@ -75,10 +77,33 @@ class ConfigPreProcessor:
             'desensitization_count': 0
         }
     
-    def _load_config(self, config_path: str) -> Dict:
+    def _load_config(self, config_path: Path) -> Dict:
         """加载配置文件"""
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
+    
+    def _prepare_output_directory(self, base_dir: str, use_timestamp: bool):
+        """为处理结果准备输出目录，必要时回退到临时目录"""
+        resolved_base = Path(base_dir)
+        if not resolved_base.is_absolute():
+            resolved_base = self.config_path.parent / resolved_base
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S') if use_timestamp else None
+        target_dir = resolved_base / timestamp if timestamp else resolved_base
+        
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return resolved_base, target_dir
+        except (PermissionError, OSError) as exc:
+            fallback_base = Path(tempfile.gettempdir()) / "config_preprocessor_output"
+            fallback_dir = fallback_base / timestamp if timestamp else fallback_base
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            logger.warning(
+                "Output directory %s is not writable (%s). Falling back to %s",
+                target_dir,
+                exc,
+                fallback_dir
+            )
+            return fallback_base, fallback_dir
     
     def process_file(self, file_path: str, 
                     desensitize: bool = True,
@@ -352,240 +377,6 @@ class ConfigPreProcessor:
         logger.info(f"汇总报告已保存: {summary_file}")
 
 
-# 创建元数据提取器模块
-class MetadataExtractor:
-    """元数据提取器"""
-    
-    def __init__(self, config_path: str = "config.yaml"):
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        
-        self.config = config.get('metadata', {})
-        self.project_patterns = [re.compile(p) for p in self.config.get('project_patterns', [])]
-        self.version_patterns = [re.compile(p) for p in self.config.get('version_patterns', [])]
-        self.timestamp_patterns = [re.compile(p) for p in self.config.get('timestamp_patterns', [])]
-    
-    def extract(self, content: str) -> Dict:
-        """提取元数据"""
-        import re
-        metadata = {}
-        
-        # 提取项目信息
-        for pattern in self.project_patterns:
-            match = pattern.search(content)
-            if match:
-                metadata['project'] = match.group(1) if match.groups() else match.group(0)
-                break
-        
-        # 提取版本信息
-        for pattern in self.version_patterns:
-            match = pattern.search(content)
-            if match:
-                metadata['version'] = match.group(1) if match.groups() else match.group(0)
-                break
-        
-        # 提取时间戳
-        for pattern in self.timestamp_patterns:
-            match = pattern.search(content)
-            if match:
-                metadata['timestamp'] = match.group(0)
-                break
-        
-        # 提取基本统计
-        lines = content.split('\n')
-        metadata['statistics'] = {
-            'total_lines': len(lines),
-            'non_empty_lines': sum(1 for line in lines if line.strip()),
-            'comment_lines': sum(1 for line in lines if line.strip().startswith('#')),
-            'size_bytes': len(content.encode('utf-8'))
-        }
-        
-        return metadata
-
-
-def create_metadata_extractor_file():
-    """创建独立的元数据提取器文件"""
-    metadata_code = '''"""
-元数据提取模块
-用于从配置文件中提取项目信息、版本、时间戳等元数据
-"""
-
-import re
-import yaml
-from typing import Dict, List, Any
-from datetime import datetime
-import logging
-
-logger = logging.getLogger(__name__)
-
-class MetadataExtractor:
-    """配置文件元数据提取器"""
-    
-    def __init__(self, config_path: str = "config.yaml"):
-        """初始化元数据提取器"""
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        
-        self.config = config.get('metadata', {})
-        
-        # 编译正则表达式
-        self.project_patterns = [
-            re.compile(p) for p in self.config.get('project_patterns', [])
-        ]
-        self.version_patterns = [
-            re.compile(p) for p in self.config.get('version_patterns', [])
-        ]
-        self.timestamp_patterns = [
-            re.compile(p) for p in self.config.get('timestamp_patterns', [])
-        ]
-    
-    def extract(self, content: str) -> Dict:
-        """
-        从配置内容中提取元数据
-        
-        Args:
-            content: 配置文件内容
-            
-        Returns:
-            元数据字典
-        """
-        metadata = {}
-        
-        # 提取项目信息
-        if self.config.get('extract_project_info', True):
-            project_info = self._extract_project_info(content)
-            if project_info:
-                metadata.update(project_info)
-        
-        # 提取版本信息
-        if self.config.get('extract_version', True):
-            version_info = self._extract_version_info(content)
-            if version_info:
-                metadata['version'] = version_info
-        
-        # 提取时间戳
-        if self.config.get('extract_timestamp', True):
-            timestamp = self._extract_timestamp(content)
-            if timestamp:
-                metadata['timestamp'] = timestamp
-        
-        # 提取5GC特定信息
-        gsc_info = self._extract_5gc_info(content)
-        if gsc_info:
-            metadata['5gc_info'] = gsc_info
-        
-        # 提取统计信息
-        statistics = self._extract_statistics(content)
-        metadata['statistics'] = statistics
-        
-        return metadata
-    
-    def _extract_project_info(self, content: str) -> Dict:
-        """提取项目信息"""
-        project_info = {}
-        
-        for pattern in self.project_patterns:
-            match = pattern.search(content)
-            if match:
-                if match.groups():
-                    # 提取命名组或第一个组
-                    if match.lastindex:
-                        key = pattern.pattern.split(':')[0].split()[-1].lower()
-                        project_info[key] = match.group(1)
-                else:
-                    project_info['project'] = match.group(0)
-        
-        return project_info
-    
-    def _extract_version_info(self, content: str) -> str:
-        """提取版本信息"""
-        for pattern in self.version_patterns:
-            match = pattern.search(content)
-            if match:
-                return match.group(1) if match.groups() else match.group(0)
-        
-        return None
-    
-    def _extract_timestamp(self, content: str) -> str:
-        """提取时间戳"""
-        for pattern in self.timestamp_patterns:
-            match = pattern.search(content)
-            if match:
-                return match.group(0)
-        
-        return None
-    
-    def _extract_5gc_info(self, content: str) -> Dict:
-        """提取5GC相关信息"""
-        info = {
-            'network_functions': [],
-            'features': [],
-            'interfaces': []
-        }
-        
-        # 网元识别
-        nf_keywords = [
-            'AMF', 'SMF', 'UPF', 'NRF', 'UDM', 'AUSF', 'NSSF', 
-            'PCF', 'BSF', 'CHF', 'SEPP', 'SCP', 'NEF', 'NRF'
-        ]
-        
-        content_upper = content.upper()
-        for nf in nf_keywords:
-            if nf in content_upper:
-                info['network_functions'].append(nf)
-        
-        # 功能特性识别
-        feature_keywords = [
-            'slice', 'roaming', 'handover', 'QoS', 'charging',
-            'authentication', 'security', 'policy', 'session'
-        ]
-        
-        content_lower = content.lower()
-        for feature in feature_keywords:
-            if feature.lower() in content_lower:
-                info['features'].append(feature)
-        
-        # 接口识别
-        interface_patterns = [
-            r'N[1-9]\\d*',  # N1, N2, N3, etc.
-            r'S[1-9]\\d*',  # S1, S5, S8, etc.
-            r'Rx', r'Gx', r'Gy',  # Diameter interfaces
-        ]
-        
-        for pattern_str in interface_patterns:
-            pattern = re.compile(pattern_str)
-            matches = pattern.findall(content)
-            info['interfaces'].extend(matches)
-        
-        # 去重
-        info['network_functions'] = list(set(info['network_functions']))
-        info['features'] = list(set(info['features']))
-        info['interfaces'] = list(set(info['interfaces']))
-        
-        return info
-    
-    def _extract_statistics(self, content: str) -> Dict:
-        """提取统计信息"""
-        lines = content.split('\\n')
-        
-        statistics = {
-            'total_lines': len(lines),
-            'non_empty_lines': sum(1 for line in lines if line.strip()),
-            'comment_lines': sum(1 for line in lines if line.strip().startswith('#')),
-            'size_bytes': len(content.encode('utf-8')),
-            'size_mb': round(len(content.encode('utf-8')) / (1024 * 1024), 2)
-        }
-        
-        # 配置项统计
-        config_items = 0
-        for line in lines:
-            if '=' in line or ':' in line:
-                if not line.strip().startswith('#'):
-                    config_items += 1
-        
-        statistics['config_items'] = config_items
-        
-        return statistics
 
 
 if __name__ == "__main__":
