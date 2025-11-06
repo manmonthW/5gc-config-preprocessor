@@ -19,7 +19,11 @@ project_dir = current_dir.parent
 src_dir = project_dir / 'src'
 sys.path.insert(0, str(src_dir))
 
-from .logger import general_logger
+try:
+    from .logger import general_logger
+except ImportError:
+    # Direct import when running as script
+    from logger import general_logger
 
 class DebugTools:
     """调试工具类"""

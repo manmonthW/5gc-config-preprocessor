@@ -1,0 +1,19 @@
+# Test YAML file for debugging
+project:
+  name: "Test Project"
+  version: "1.0.0"
+  
+network:
+  management_ip: "192.168.1.100"
+  service_ip: "10.0.0.1"
+  
+security:
+  password: "test123"
+  api_key: "sk-1234567890"
+  
+pcc:
+  instance_name: "PCC_TEST"
+  nfvi_config:
+    cpu: 4
+    memory: "8GB"
+    storage: "100GB"

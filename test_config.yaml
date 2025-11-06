@@ -1,0 +1,51 @@
+# 5GC Test Configuration
+# This is a test file for debugging the preprocessor
+
+project:
+  name: "Test 5GC Project"
+  version: "1.0.0"
+  customer: "Test Customer Ltd"
+  date: "2024-01-15"
+
+global:
+  site_id: "TEST001"
+  region: "Test-Region"
+  deployment_type: "distributed"
+  
+network:
+  management_ip: "192.168.1.100"
+  service_ip: "10.0.0.1"
+  external_ip: "203.0.113.1"
+  
+security:
+  admin_password: "AdminPass123!"
+  api_key: "sk-1234567890abcdef"
+  certificate_path: "/opt/certs/server.crt"
+
+amf:
+  name: "AMF_TEST_01"
+  id: "0x0001"
+  plmn_id: "46000"
+  region_id: "0x02"
+  set_id: "0x001"
+  
+  interfaces:
+    - name: "N1"
+      ip: "172.16.1.10"
+      port: 38412
+    - name: "N2" 
+      ip: "172.16.2.10"
+      port: 38412
+
+subscribers:
+  - imsi: "460001234567890"
+    msisdn: "8613812345678"
+    key: "465B5CE8B199B49FAA5F0A2EE238A6BC"
+  - imsi: "460001234567891"
+    msisdn: "8613812345679"
+    key: "465B5CE8B199B49FAA5F0A2EE238A6BD"
+
+logging:
+  level: "DEBUG"
+  file: "/var/log/5gc/test.log"
+  max_size: "100MB"

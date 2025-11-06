@@ -4,10 +4,16 @@
 """
 
 import json
-import xmltodict
 import yaml
 import re
 import chardet
+
+try:
+    import xmltodict
+    XML_SUPPORT = True
+except ImportError:
+    XML_SUPPORT = False
+    xmltodict = None
 from typing import Dict, Any, Union, List
 from pathlib import Path
 import logging
@@ -148,6 +154,9 @@ class FormatConverter:
     
     def parse_xml(self, content: str) -> ConfigStructure:
         """解析XML格式配置"""
+        if not XML_SUPPORT:
+            raise ValueError("XML support not available - xmltodict module not installed")
+        
         try:
             # 解析XML为字典
             parsed = xmltodict.parse(content)

@@ -547,8 +547,8 @@ class MetadataExtractor:
         
         # 接口识别
         interface_patterns = [
-            r'N[1-9]\d*',  # N1, N2, N3, etc.
-            r'S[1-9]\d*',  # S1, S5, S8, etc.
+            r'N[1-9]\\d*',  # N1, N2, N3, etc.
+            r'S[1-9]\\d*',  # S1, S5, S8, etc.
             r'Rx', r'Gx', r'Gy',  # Diameter interfaces
         ]
         
@@ -586,15 +586,6 @@ class MetadataExtractor:
         statistics['config_items'] = config_items
         
         return statistics
-'''
-    
-    with open('/home/claude/config_preprocessor/src/metadata_extractor.py', 'w', encoding='utf-8') as f:
-        f.write(metadata_code)
-    
-    return "metadata_extractor.py created"
-
-# 创建元数据提取器文件
-create_metadata_extractor_file()
 
 
 if __name__ == "__main__":

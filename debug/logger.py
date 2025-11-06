@@ -11,7 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .config import debug_config, LogLevel
+try:
+    from .config import debug_config, LogLevel
+except ImportError:
+    # Direct import when running as script
+    from config import debug_config, LogLevel
 
 class DebugLogger:
     """调试日志记录器"""
