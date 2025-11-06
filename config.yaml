@@ -9,6 +9,7 @@ file_processing:
   supported_formats:
     - xml
     - json
+    - yaml
     - txt
     - conf
     - cfg

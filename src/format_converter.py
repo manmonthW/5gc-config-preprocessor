@@ -200,6 +200,37 @@ class FormatConverter:
         except Exception as e:
             logger.error(f"JSON解析失败: {e}")
             raise
+
+    def parse_yaml(self, content: str) -> ConfigStructure:
+        """解析YAML格式配置"""
+        try:
+            parsed = yaml.safe_load(content)
+        except Exception as e:
+            logger.error(f"YAML解析失败: {e}")
+            raise
+
+        if parsed is None:
+            parsed = {}
+        elif isinstance(parsed, (str, int, float, bool)):
+            # 保留标量内容，但转换为字典以便统一处理
+            parsed = {'value': parsed}
+
+        hierarchy = self._extract_hierarchy(parsed)
+        line_mapping = self._create_line_mapping_yaml(content)
+
+        metadata = {'type': 'yaml'}
+        if isinstance(parsed, dict):
+            metadata['root_keys'] = list(parsed.keys())
+        elif isinstance(parsed, list):
+            metadata['items'] = len(parsed)
+
+        return ConfigStructure(
+            format=ConfigFormat.YAML,
+            content=parsed,
+            metadata=metadata,
+            hierarchy=hierarchy,
+            line_mapping=line_mapping
+        )
     
     def parse_text(self, content: str) -> ConfigStructure:
         """解析文本格式配置"""
@@ -384,6 +415,30 @@ class FormatConverter:
                 line_mapping[f"{current_section}.{key}"] = line_no
         
         return line_mapping
+
+    def _create_line_mapping_yaml(self, content: str) -> Dict:
+        """创建YAML内容的行映射"""
+        line_mapping = {}
+        lines = content.split('\n')
+        for line_no, raw_line in enumerate(lines, 1):
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+
+            if stripped.startswith('- '):
+                candidate = stripped[2:].strip()
+                if candidate and ':' in candidate:
+                    key = candidate.split(':', 1)[0].strip().strip('\'"')
+                else:
+                    key = 'list_item'
+            elif ':' in stripped:
+                key = stripped.split(':', 1)[0].strip().strip('\'"')
+            else:
+                continue
+
+            if key:
+                line_mapping.setdefault(key, []).append(line_no)
+        return line_mapping
     
     def convert_to_unified(self, structure: ConfigStructure) -> Dict:
         """
@@ -469,6 +524,8 @@ class FormatConverter:
             structure = self.parse_xml(content)
         elif format_type == ConfigFormat.JSON:
             structure = self.parse_json(content)
+        elif format_type == ConfigFormat.YAML:
+            structure = self.parse_yaml(content)
         elif format_type == ConfigFormat.INI:
             structure = self.parse_ini(content)
         elif format_type in [ConfigFormat.TEXT, ConfigFormat.CONF]:
