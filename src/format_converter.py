@@ -7,6 +7,7 @@ import json
 import yaml
 import re
 import chardet
+import xml.etree.ElementTree as ET
 
 try:
     import xmltodict
@@ -154,29 +155,34 @@ class FormatConverter:
     
     def parse_xml(self, content: str) -> ConfigStructure:
         """解析XML格式配置"""
-        if not XML_SUPPORT:
-            raise ValueError("XML support not available - xmltodict module not installed")
+        if XML_SUPPORT:
+            try:
+                parsed = xmltodict.parse(content)
+                root_element = list(parsed.keys())[0] if parsed else None
+            except Exception as e:
+                logger.error(f"XML解析失败: {e}")
+                raise
+        else:
+            try:
+                root = ET.fromstring(content)
+            except Exception as e:
+                logger.error(f"XML解析失败: {e}")
+                raise
+
+            parsed = {root.tag: self._etree_to_dict(root)}
+            root_element = root.tag
+            logger.warning("xmltodict module not available, using ElementTree fallback parser")
         
-        try:
-            # 解析XML为字典
-            parsed = xmltodict.parse(content)
-            
-            # 提取层级结构
-            hierarchy = self._extract_hierarchy(parsed)
-            
-            # 创建行映射
-            line_mapping = self._create_line_mapping_xml(content)
-            
-            return ConfigStructure(
-                format=ConfigFormat.XML,
-                content=parsed,
-                metadata={'type': 'xml', 'root_element': list(parsed.keys())[0] if parsed else None},
-                hierarchy=hierarchy,
-                line_mapping=line_mapping
-            )
-        except Exception as e:
-            logger.error(f"XML解析失败: {e}")
-            raise
+        hierarchy = self._extract_hierarchy(parsed)
+        line_mapping = self._create_line_mapping_xml(content)
+        
+        return ConfigStructure(
+            format=ConfigFormat.XML,
+            content=parsed,
+            metadata={'type': 'xml', 'root_element': root_element},
+            hierarchy=hierarchy,
+            line_mapping=line_mapping
+        )
     
     def parse_json(self, content: str) -> ConfigStructure:
         """解析JSON格式配置"""
@@ -439,6 +445,42 @@ class FormatConverter:
             if key:
                 line_mapping.setdefault(key, []).append(line_no)
         return line_mapping
+
+    def _etree_to_dict(self, element: ET.Element) -> Any:
+        """将ElementTree节点转换为字典"""
+        node_dict: Dict[str, Any] = {}
+        
+        # 处理属性
+        if element.attrib:
+            node_dict['@attributes'] = dict(element.attrib)
+        
+        # 处理子节点
+        children = list(element)
+        if children:
+            child_map: Dict[str, Any] = {}
+            for child in children:
+                child_dict = self._etree_to_dict(child)
+                child_map.setdefault(child.tag, [])
+                child_map[child.tag].append(child_dict)
+            
+            # 将只有一个元素的列表简化
+            for key, value in child_map.items():
+                if len(value) == 1:
+                    child_map[key] = value[0]
+            node_dict.update(child_map)
+        
+        text = (element.text or '').strip()
+        if text:
+            node_dict['#text'] = text
+        
+        # 处理尾部文本
+        tail_text = (element.tail or '').strip()
+        if tail_text:
+            node_dict['#tail'] = tail_text
+
+        if not node_dict:
+            return ""
+        return node_dict
     
     def convert_to_unified(self, structure: ConfigStructure) -> Dict:
         """
