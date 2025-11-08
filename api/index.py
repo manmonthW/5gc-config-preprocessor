@@ -239,6 +239,12 @@ class handler(BaseHTTPRequestHandler):
                         'processed_files': result.processed_files,
                         'metadata': result.metadata,
                         'statistics': result.statistics,
+                        'output_directory': result.output_directory,
+                        'preferred_output_root': result.preferred_output_root,
+                        'used_output_fallback': result.used_output_fallback,
+                        'mirrored_output_directory': result.mirrored_output_directory,
+                        'mirrored_files': result.mirrored_files or [],
+                        'mirror_error': result.mirror_error,
                         'request_id': request_id,
                         'timestamp': datetime.now().isoformat()
                     }

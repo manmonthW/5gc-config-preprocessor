@@ -589,6 +589,44 @@
                     html += '</ul>';
                 }
                 
+                if (data.output_directory) {
+                    html += '<div style="margin-top: 15px;">';
+                    html += `<p><strong>当前运行环境输出目录:</strong> <code>${data.output_directory}</code></p>`;
+                    html += '</div>';
+                }
+                
+                if (data.mirrored_output_directory) {
+                    html += '<div style="margin-top: 10px; padding: 12px; background: #e6ffed; border-left: 4px solid #28a745; border-radius: 6px;">';
+                    html += '<p style="margin-bottom: 6px;"><strong>已同步到项目 output 目录</strong></p>';
+                    html += `<p style="margin: 0;"><code>${data.mirrored_output_directory}</code></p>`;
+                    html += '</div>';
+                    
+                    if (Array.isArray(data.mirrored_files) && data.mirrored_files.length) {
+                        html += '<p style="margin-top: 10px;">同步后的文件路径：</p><ul>';
+                        data.mirrored_files.forEach(path => {
+                            html += `<li><code>${path}</code></li>`;
+                        });
+                        html += '</ul>';
+                    }
+                } else if (data.used_output_fallback) {
+                    html += '<div style="margin-top: 10px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 6px;">';
+                    html += '<p style="margin: 0;">当前部署环境的项目目录为只读，文件已暂存到临时目录。请及时下载或在本地环境运行以同步到 output 文件夹。</p>';
+                    if (data.output_directory) {
+                        html += `<p style="margin: 0.5em 0 0;"><code>${data.output_directory}</code></p>`;
+                    }
+                    html += '</div>';
+                }
+                
+                if (data.mirror_error) {
+                    html += '<div style="margin-top: 10px; padding: 12px; background: #fdecea; border-left: 4px solid #f44336; border-radius: 6px;">';
+                    html += `<p style="margin: 0;"><strong>output同步失败:</strong> ${data.mirror_error}</p>`;
+                    html += '</div>';
+                }
+                
+                if (data.preferred_output_root) {
+                    html += `<p style="margin-top: 10px;">配置中的输出根目录: <code>${data.preferred_output_root}</code></p>`;
+                }
+                
                 if (data.processed_content) {
                     html += '<h4>📄 处理结果预览：</h4>';
                     for (const [filename, content] of Object.entries(data.processed_content)) {

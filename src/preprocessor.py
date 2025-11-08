@@ -6,11 +6,12 @@
 import os
 import json
 import yaml
+import shutil
 import logging
 import tempfile
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 try:
     from tqdm import tqdm
@@ -43,6 +44,12 @@ class ProcessingResult:
     errors: List[str]
     processing_time: float
     message: str = ""
+    output_directory: str = ""
+    preferred_output_root: str = ""
+    mirrored_output_directory: Optional[str] = None
+    mirrored_files: Optional[List[str]] = None
+    used_output_fallback: bool = False
+    mirror_error: Optional[str] = None
 
 class ConfigPreProcessor:
     """配置文件预处理器主类"""
@@ -68,7 +75,11 @@ class ConfigPreProcessor:
         output_settings = self.config.get('output', {})
         base_dir = output_settings.get('base_dir', './output')
         use_timestamp = output_settings.get('create_timestamp_folder', True)
-        self.output_base, self.output_dir = self._prepare_output_directory(base_dir, use_timestamp)
+        self.preferred_output_base = self._resolve_output_base(base_dir)
+        self.output_base, self.output_dir, self.using_output_fallback = self._prepare_output_directory(
+            self.preferred_output_base,
+            use_timestamp
+        )
         
         # 初始化统计信息
         self.statistics = {
@@ -84,17 +95,21 @@ class ConfigPreProcessor:
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
     
-    def _prepare_output_directory(self, base_dir: str, use_timestamp: bool):
-        """为处理结果准备输出目录，必要时回退到临时目录"""
+    def _resolve_output_base(self, base_dir: str) -> Path:
+        """解析配置的输出根目录"""
         resolved_base = Path(base_dir)
         if not resolved_base.is_absolute():
             resolved_base = self.config_path.parent / resolved_base
+        return resolved_base
+    
+    def _prepare_output_directory(self, preferred_base: Path, use_timestamp: bool):
+        """为处理结果准备输出目录，必要时回退到临时目录"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S') if use_timestamp else None
-        target_dir = resolved_base / timestamp if timestamp else resolved_base
+        target_dir = preferred_base / timestamp if timestamp else preferred_base
         
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
-            return resolved_base, target_dir
+            return preferred_base, target_dir, False
         except (PermissionError, OSError) as exc:
             fallback_base = Path(tempfile.gettempdir()) / "config_preprocessor_output"
             fallback_dir = fallback_base / timestamp if timestamp else fallback_base
@@ -105,7 +120,7 @@ class ConfigPreProcessor:
                 exc,
                 fallback_dir
             )
-            return fallback_base, fallback_dir
+            return fallback_base, fallback_dir, True
     
     def process_file(self, file_path: str, 
                     desensitize: bool = True,
@@ -129,6 +144,8 @@ class ConfigPreProcessor:
         errors = []
         processed_files = []
         metadata = {}
+        
+        file_output_dir: Optional[Path] = None
         
         try:
             file_path = Path(file_path)
@@ -243,6 +260,12 @@ class ConfigPreProcessor:
             processing_time = (datetime.now() - start_time).total_seconds()
             self.statistics['processing_time_seconds'] += processing_time
             
+            mirror_info = self._mirror_output_if_needed(file_output_dir, processed_files)
+            if mirror_info.get('mirrored'):
+                logger.info("✅ 输出目录已同步到项目 output: %s", mirror_info.get('mirror_dir'))
+            elif mirror_info.get('error'):
+                logger.warning("⚠️ 输出目录同步失败: %s", mirror_info['error'])
+            
             logger.info(f"✅ 文件处理完成: {file_path}")
             logger.info(f"   处理时间: {processing_time:.2f} 秒")
             logger.info(f"   输出目录: {file_output_dir}")
@@ -256,7 +279,13 @@ class ConfigPreProcessor:
                 statistics=self.statistics,
                 errors=errors,
                 processing_time=processing_time,
-                message=f"Processing completed successfully in {processing_time:.2f} seconds"
+                message=f"Processing completed successfully in {processing_time:.2f} seconds",
+                output_directory=str(file_output_dir),
+                preferred_output_root=str(self.preferred_output_base),
+                mirrored_output_directory=mirror_info.get('mirror_dir'),
+                mirrored_files=mirror_info.get('mirror_files'),
+                used_output_fallback=self.using_output_fallback,
+                mirror_error=mirror_info.get('error')
             )
             
         except Exception as e:
@@ -272,7 +301,10 @@ class ConfigPreProcessor:
                 statistics=self.statistics,
                 errors=errors,
                 processing_time=(datetime.now() - start_time).total_seconds(),
-                message=f"Processing failed: {str(e)}"
+                message=f"Processing failed: {str(e)}",
+                output_directory=str(file_output_dir) if file_output_dir else str(self.output_dir),
+                preferred_output_root=str(self.preferred_output_base),
+                used_output_fallback=self.using_output_fallback
             )
     
     def process_directory(self, directory_path: str, 
@@ -311,6 +343,43 @@ class ConfigPreProcessor:
         self._generate_summary_report(results)
         
         return results
+    
+    def _mirror_output_if_needed(self, source_dir: Path, processed_files: List[str]) -> Dict[str, Any]:
+        """在临时目录写入时尝试同步到项目 output 目录"""
+        if not self.using_output_fallback or not source_dir:
+            return {'mirrored': False}
+        
+        mirror_info = {'mirrored': False}
+        try:
+            relative_dir = source_dir.relative_to(self.output_base)
+        except ValueError:
+            relative_dir = source_dir.name
+        
+        target_dir = self.preferred_output_base / relative_dir
+        
+        try:
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            if target_dir.exists():
+                shutil.rmtree(target_dir)
+            shutil.copytree(source_dir, target_dir)
+            
+            mirrored_files = []
+            for file_path in processed_files:
+                try:
+                    rel = Path(file_path).relative_to(self.output_base)
+                except ValueError:
+                    continue
+                mirrored_files.append(str(self.preferred_output_base / rel))
+            
+            mirror_info.update({
+                'mirrored': True,
+                'mirror_dir': str(target_dir),
+                'mirror_files': mirrored_files
+            })
+        except Exception as exc:
+            mirror_info['error'] = str(exc)
+        
+        return mirror_info
     
     def _unified_to_text(self, unified: Dict) -> str:
         """将统一格式转回文本"""
