@@ -6,6 +6,7 @@
 
 import os
 import json
+import tempfile
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -29,14 +30,14 @@ class DebugConfig:
         self.log_to_console = os.getenv('LOG_TO_CONSOLE', 'true').lower() == 'true'
         self.detailed_errors = os.getenv('DETAILED_ERRORS', 'true').lower() == 'true'
         
-        # 创建日志目录
+        # 创建日志目录（在只读环境中自动降级）
         self.log_dir = Path(__file__).parent / 'logs'
         if self.enabled and self.log_to_file:
-            self.log_dir.mkdir(exist_ok=True)
+            self._ensure_log_dir()
     
     def get_log_file_path(self, module_name="app"):
         """获取日志文件路径"""
-        if not self.log_to_file:
+        if not self.log_to_file or not self.log_dir:
             return None
         
         timestamp = datetime.now().strftime("%Y%m%d")
@@ -59,6 +60,20 @@ class DebugConfig:
         check_level = levels.get(level.value, 0)
         
         return check_level >= current_level
+
+    def _ensure_log_dir(self):
+        """确保日志目录可写，在只读环境下自动回退"""
+        try:
+            self.log_dir.mkdir(exist_ok=True)
+        except (OSError, PermissionError):
+            fallback_dir = Path(tempfile.gettempdir()) / "config_preprocessor_logs"
+            try:
+                fallback_dir.mkdir(parents=True, exist_ok=True)
+                self.log_dir = fallback_dir
+            except Exception:
+                # 最终回退：禁用文件日志，避免阻塞模块导入
+                self.log_to_file = False
+                self.log_dir = None
 
 # 全局调试配置实例
 debug_config = DebugConfig()
