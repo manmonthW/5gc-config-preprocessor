@@ -230,7 +230,7 @@ class handler(BaseHTTPRequestHandler):
                         api_logger.info(f"File processing completed", 
                                       request_id=request_id,
                                       success=result.success,
-                                      message=result.message,
+                                      processing_message=result.message,
                                       processed_files_count=len(result.processed_files) if result.processed_files else 0)
                     
                     response_data = {
@@ -345,10 +345,13 @@ class handler(BaseHTTPRequestHandler):
             
             if DEBUG_AVAILABLE:
                 error_details['traceback'] = traceback.format_exc()
-                api_logger.error(f"POST request processing failed", 
-                               request_id=request_id,
-                               exception=e,
-                               **error_details)
+                log_kwargs = dict(error_details)
+                log_kwargs.setdefault('request_id', request_id)
+                api_logger.error(
+                    f"POST request processing failed",
+                    exception=e,
+                    **log_kwargs
+                )
             
             self.send_error_response(500, f'Processing failed: {str(e)}', error_details)
 

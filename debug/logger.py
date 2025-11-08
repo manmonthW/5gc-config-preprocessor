@@ -58,25 +58,25 @@ class DebugLogger:
             except Exception as e:
                 print(f"Failed to write log file: {e}", file=sys.stderr)
     
-    def debug(self, message: str, **kwargs):
+    def debug(self, msg: str, **kwargs):
         """记录调试信息"""
         if debug_config.is_level_enabled(LogLevel.DEBUG):
-            log_entry = self._format_message(LogLevel.DEBUG, message, kwargs if kwargs else None)
+            log_entry = self._format_message(LogLevel.DEBUG, msg, kwargs if kwargs else None)
             self._write_log(log_entry)
     
-    def info(self, message: str, **kwargs):
+    def info(self, msg: str, **kwargs):
         """记录信息"""
         if debug_config.is_level_enabled(LogLevel.INFO):
-            log_entry = self._format_message(LogLevel.INFO, message, kwargs if kwargs else None)
+            log_entry = self._format_message(LogLevel.INFO, msg, kwargs if kwargs else None)
             self._write_log(log_entry)
     
-    def warning(self, message: str, **kwargs):
+    def warning(self, msg: str, **kwargs):
         """记录警告"""
         if debug_config.is_level_enabled(LogLevel.WARNING):
-            log_entry = self._format_message(LogLevel.WARNING, message, kwargs if kwargs else None)
+            log_entry = self._format_message(LogLevel.WARNING, msg, kwargs if kwargs else None)
             self._write_log(log_entry)
     
-    def error(self, message: str, exception: Optional[Exception] = None, **kwargs):
+    def error(self, msg: str, exception: Optional[Exception] = None, **kwargs):
         """记录错误"""
         if debug_config.is_level_enabled(LogLevel.ERROR):
             extra_data = kwargs.copy() if kwargs else {}
@@ -88,10 +88,10 @@ class DebugLogger:
                     'traceback': traceback.format_exc() if debug_config.detailed_errors else None
                 }
             
-            log_entry = self._format_message(LogLevel.ERROR, message, extra_data)
+            log_entry = self._format_message(LogLevel.ERROR, msg, extra_data)
             self._write_log(log_entry)
     
-    def critical(self, message: str, exception: Optional[Exception] = None, **kwargs):
+    def critical(self, msg: str, exception: Optional[Exception] = None, **kwargs):
         """记录严重错误"""
         if debug_config.is_level_enabled(LogLevel.CRITICAL):
             extra_data = kwargs.copy() if kwargs else {}
@@ -103,7 +103,7 @@ class DebugLogger:
                     'traceback': traceback.format_exc()
                 }
             
-            log_entry = self._format_message(LogLevel.CRITICAL, message, extra_data)
+            log_entry = self._format_message(LogLevel.CRITICAL, msg, extra_data)
             self._write_log(log_entry)
 
 # 创建全局日志实例
