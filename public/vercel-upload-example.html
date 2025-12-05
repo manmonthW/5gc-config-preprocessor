@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>5GC Config Preprocessor - Vercel Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8f9ff;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            color: #667eea;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .upload-hint {
+            color: #999;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .options {
+            margin-top: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .option-group {
+            margin-bottom: 15px;
+        }
+
+        .option-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .option-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 5px;
+            transition: background 0.2s;
+        }
+
+        .option-label:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        input[type="checkbox"] {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+            display: block;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+            display: block;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+            display: block;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f0f2ff;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .file-size {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .result-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .result-item {
+            margin-bottom: 8px;
+            color: #555;
+        }
+
+        .result-item strong {
+            color: #333;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 5GC 配置文件预处理器</h1>
+        <p class="subtitle">支持 XML/YAML/JSON/INI 格式 | 智能脱敏 | 自动分块 | 元数据提取</p>
+
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📄</div>
+            <div class="upload-text">点击或拖拽上传配置文件</div>
+            <div class="upload-hint">支持 XML, YAML, JSON, INI, TXT 格式</div>
+            <input type="file" id="fileInput" accept=".xml,.yaml,.yml,.json,.ini,.txt">
+        </div>
+
+        <div class="file-info" id="fileInfo">
+            <div class="file-name" id="fileName"></div>
+            <div class="file-size" id="fileSize"></div>
+        </div>
+
+        <div class="options">
+            <div class="option-group">
+                <label class="option-label">
+                    <input type="checkbox" id="desensitize" checked>
+                    <span>🔒 脱敏处理（隐藏IP、密码等敏感信息）</span>
+                </label>
+            </div>
+            <div class="option-group">
+                <label class="option-label">
+                    <input type="checkbox" id="convertFormat" checked>
+                    <span>🔄 格式转换（统一为 JSON 格式）</span>
+                </label>
+            </div>
+            <div class="option-group">
+                <label class="option-label">
+                    <input type="checkbox" id="chunk">
+                    <span>📦 智能分块（大文件拆分）</span>
+                </label>
+            </div>
+            <div class="option-group">
+                <label class="option-label">
+                    <input type="checkbox" id="extractMetadata" checked>
+                    <span>📊 元数据提取（网元信息、网络配置等）</span>
+                </label>
+            </div>
+        </div>
+
+        <button id="processBtn" disabled>选择文件开始处理</button>
+
+        <div class="status" id="status"></div>
+
+        <div class="result-info" id="resultInfo" style="display: none;"></div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const processBtn = document.getElementById('processBtn');
+        const status = document.getElementById('status');
+        const resultInfo = document.getElementById('resultInfo');
+
+        let selectedFile = null;
+
+        // 点击上传区域
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // 文件选择
+        fileInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
+
+        // 拖拽上传
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        // 处理文件
+        function handleFile(file) {
+            if (!file) return;
+
+            selectedFile = file;
+
+            fileName.textContent = `📄 ${file.name}`;
+            fileSize.textContent = `大小: ${formatFileSize(file.size)}`;
+            fileInfo.classList.add('show');
+
+            processBtn.disabled = false;
+            processBtn.textContent = '开始处理';
+
+            status.className = 'status';
+            status.textContent = '';
+            resultInfo.style.display = 'none';
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        // 处理按钮点击
+        processBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            processBtn.disabled = true;
+            status.className = 'status info';
+            status.innerHTML = '<div class="spinner"></div>正在处理文件，请稍候...';
+            resultInfo.style.display = 'none';
+
+            try {
+                // 读取文件为 base64
+                const base64Content = await fileToBase64(selectedFile);
+
+                // 准备请求数据
+                const requestData = {
+                    file_content: base64Content,
+                    filename: selectedFile.name,
+                    options: {
+                        desensitize: document.getElementById('desensitize').checked,
+                        convert_format: document.getElementById('convertFormat').checked,
+                        chunk: document.getElementById('chunk').checked,
+                        extract_metadata: document.getElementById('extractMetadata').checked
+                    }
+                };
+
+                // 发送请求到 API
+                const response = await fetch('/api', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    status.className = 'status success';
+                    status.textContent = '✅ 处理成功！正在准备下载...';
+
+                    // 显示处理结果信息
+                    showResultInfo(result);
+
+                    // 下载文件
+                    downloadFile(result.content_base64, result.filename);
+
+                    setTimeout(() => {
+                        status.className = 'status success';
+                        status.textContent = '✅ 文件已下载完成！';
+                        processBtn.disabled = false;
+                        processBtn.textContent = '重新处理';
+                    }, 500);
+                } else {
+                    throw new Error(result.error || '处理失败');
+                }
+
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = `❌ 错误: ${error.message}`;
+                processBtn.disabled = false;
+                processBtn.textContent = '重试';
+            }
+        });
+
+        // 文件转 base64
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 下载文件
+        function downloadFile(base64Content, filename) {
+            const link = document.createElement('a');
+            link.href = 'data:application/octet-stream;base64,' + base64Content;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 显示处理结果信息
+        function showResultInfo(result) {
+            let html = '<div class="result-item"><strong>处理结果</strong></div>';
+
+            if (result.file_count !== undefined) {
+                html += `<div class="result-item">📁 输出文件数: <strong>${result.file_count}</strong></div>`;
+            }
+
+            if (result.processing_time !== undefined) {
+                html += `<div class="result-item">⏱️ 处理时间: <strong>${result.processing_time.toFixed(2)}秒</strong></div>`;
+            }
+
+            if (result.filename) {
+                html += `<div class="result-item">📥 下载文件: <strong>${result.filename}</strong></div>`;
+            }
+
+            if (result.metadata && result.metadata['5gc_info']) {
+                const nfs = result.metadata['5gc_info'].network_functions;
+                if (nfs) {
+                    const nfCount = Object.keys(nfs).length;
+                    html += `<div class="result-item">🔧 检测到网元: <strong>${nfCount}个</strong>`;
+                    Object.keys(nfs).slice(0, 5).forEach(nf => {
+                        html += `<span class="badge">${nf}</span>`;
+                    });
+                    html += '</div>';
+                }
+            }
+
+            if (result.statistics && result.statistics.desensitization) {
+                const deStats = result.statistics.desensitization;
+                if (deStats.total_replacements) {
+                    html += `<div class="result-item">🔒 脱敏处理: <strong>${deStats.total_replacements}处</strong></div>`;
+                }
+            }
+
+            if (result.is_vercel_response) {
+                html += `<div class="result-item">☁️ 运行环境: <span class="badge">Vercel Serverless</span></div>`;
+            }
+
+            resultInfo.innerHTML = html;
+            resultInfo.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

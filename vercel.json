@@ -1,24 +1,37 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "public",
+  "version": 2,
+  "name": "5gc-config-preprocessor",
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    },
+    {
+      "src": "public/**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api",
+      "dest": "/api/index.py",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "src:api:debug"
+  },
   "functions": {
     "api/index.py": {
       "memory": 1024,
       "maxDuration": 60
-    },
-    "api/simple.py": {
-      "memory": 512,
-      "maxDuration": 30
     }
-  },
-  "rewrites": [
-    {
-      "source": "/api",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/api/",
-      "destination": "/api/index.py"
-    }
-  ]
+  }
 }

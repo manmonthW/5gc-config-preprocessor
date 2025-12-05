@@ -88,6 +88,60 @@ if result.success:
         print(f"  - {file}")
 ```
 
+## 💻 部署方式
+
+### 方式1: Vercel Serverless ⚡ (推荐)
+
+**零配置 Cloud 部署，5分钟上线！**
+
+```bash
+# 1. 推送代码到 GitHub
+git push origin main
+
+# 2. 导入到 Vercel
+# 访问 https://vercel.com/new
+# 选择你的 GitHub 仓库
+# 点击 Deploy
+
+# 3. 完成！
+# 访问: https://your-project.vercel.app
+```
+
+✨ **Vercel 部署特性**:
+- ✅ 自动环境检测（无需配置）
+- ✅ 无文件写入（内存处理）
+- ✅ 返回 Base64 编码文件
+- ✅ 自动 HTTPS
+- ✅ 全球 CDN 加速
+
+📚 **详细文档**: [Vercel 快速开始指南](VERCEL_QUICK_START.md)
+
+### 方式2: Docker 🐳
+
+```bash
+# 构建并启动
+docker-compose up -d
+
+# 访问
+http://localhost:9000/api
+```
+
+📚 **详细文档**: [Docker 部署指南](DOCKER_DEPLOYMENT.md)
+
+### 方式3: 本地运行 💻
+
+```bash
+# 命令行模式
+python quick_start.py -i config.xml
+
+# API 服务器模式
+python start_server.py
+```
+
+📚 **详细文档**: [本地部署指南](LOCAL_DEPLOYMENT.md)
+
+---
+
 ## 📁 项目结构
 
 ```
@@ -95,12 +149,20 @@ config_preprocessor/
 ├── requirements.txt       # Python依赖
 ├── config.yaml           # 配置文件
 ├── quick_start.py        # 快速启动脚本
+├── start_server.py       # API服务器
+├── vercel.json           # Vercel配置
 ├── src/
 │   ├── preprocessor.py  # 主处理器
+│   ├── vercel_utils.py  # Vercel工具（NEW）
 │   ├── desensitizer.py  # 脱敏模块
 │   ├── format_converter.py # 格式转换
 │   ├── chunker.py       # 智能分块
 │   └── metadata_extractor.py # 元数据提取
+├── api/
+│   └── index.py         # HTTP API处理
+├── public/
+│   ├── index.html       # Web界面
+│   └── vercel-upload-example.html  # Vercel示例（NEW）
 └── output/              # 输出目录
 ```
 

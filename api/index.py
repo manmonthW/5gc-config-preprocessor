@@ -17,6 +17,17 @@ debug_dir = current_dir.parent / 'debug'
 sys.path.insert(0, str(src_dir))
 sys.path.insert(0, str(debug_dir))
 
+# Import Vercel utilities
+try:
+    from vercel_utils import is_vercel_environment, prepare_vercel_response
+    VERCEL_UTILS_AVAILABLE = True
+except ImportError:
+    VERCEL_UTILS_AVAILABLE = False
+    def is_vercel_environment():
+        return False
+    def prepare_vercel_response(*args, **kwargs):
+        return {}
+
 MAX_PREVIEW_CHARS = 200_000  # limit processed content preview
 MAX_PREVIEW_FILES = 3
 
@@ -217,6 +228,15 @@ class handler(BaseHTTPRequestHandler):
                     if DEBUG_AVAILABLE:
                         api_logger.info(f"ConfigPreProcessor initialized", request_id=request_id)
                     
+                    # 检测是否为 Vercel Serverless 环境
+                    is_vercel = is_vercel_environment()
+                    if DEBUG_AVAILABLE:
+                        api_logger.info(f"Environment detection",
+                                      request_id=request_id,
+                                      is_vercel=is_vercel,
+                                      vercel_url=os.environ.get('VERCEL_URL'),
+                                      vercel_env=os.environ.get('VERCEL_ENV'))
+
                     # Process the file
                     result = preprocessor.process_file(
                         temp_file_path,
@@ -224,16 +244,56 @@ class handler(BaseHTTPRequestHandler):
                         convert_format=options.get('convert_format', True),
                         chunk=options.get('chunk', False),
                         extract_metadata=options.get('extract_metadata', True),
-                        original_filename=filename
+                        original_filename=filename,
+                        memory_mode=is_vercel  # Vercel 环境启用内存模式
                     )
                     
                     if DEBUG_AVAILABLE:
-                        api_logger.info(f"File processing completed", 
+                        api_logger.info(f"File processing completed",
                                       request_id=request_id,
                                       success=result.success,
                                       processing_message=result.message,
-                                      processed_files_count=len(result.processed_files) if result.processed_files else 0)
-                    
+                                      processed_files_count=len(result.processed_files) if result.processed_files else 0,
+                                      memory_mode=is_vercel,
+                                      has_memory_files=result.memory_files is not None)
+
+                    # Vercel 环境：返回 base64 编码的文件内容
+                    if is_vercel and result.memory_files:
+                        if DEBUG_AVAILABLE:
+                            api_logger.info(f"Preparing Vercel response",
+                                          request_id=request_id,
+                                          memory_files_count=len(result.memory_files))
+
+                        response_data = prepare_vercel_response(
+                            files=result.memory_files,
+                            original_filename=filename,
+                            success=result.success,
+                            message=result.message
+                        )
+
+                        # 添加额外的元数据信息
+                        response_data['metadata'] = result.metadata
+                        response_data['statistics'] = result.statistics
+                        response_data['request_id'] = request_id
+                        response_data['timestamp'] = datetime.now().isoformat()
+                        response_data['processing_time'] = result.processing_time
+                        response_data['is_vercel_response'] = True
+
+                        if DEBUG_AVAILABLE:
+                            api_logger.info(f"Vercel response prepared",
+                                          request_id=request_id,
+                                          response_filename=response_data.get('filename'),
+                                          file_count=response_data.get('file_count'),
+                                          content_size=len(response_data.get('content_base64', '')))
+
+                        self.send_success_response(response_data)
+
+                        if DEBUG_AVAILABLE:
+                            log_api_response(200, f"Vercel processing successful for {filename}")
+
+                        return  # 直接返回，不执行后续逻辑
+
+                    # 本地环境：返回文件路径（原有逻辑）
                     response_data = {
                         'success': result.success,
                         'message': result.message,
@@ -247,10 +307,11 @@ class handler(BaseHTTPRequestHandler):
                         'mirrored_files': result.mirrored_files or [],
                         'mirror_error': result.mirror_error,
                         'request_id': request_id,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': datetime.now().isoformat(),
+                        'is_vercel_response': False
                     }
-                    
-                    # Read processed content if available
+
+                    # Read processed content if available (本地模式预览)
                     if result.success and result.processed_files:
                         processed_content = {}
                         for file_path in result.processed_files[:MAX_PREVIEW_FILES]:

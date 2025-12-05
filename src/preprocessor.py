@@ -50,6 +50,8 @@ class ProcessingResult:
     mirrored_files: Optional[List[str]] = None
     used_output_fallback: bool = False
     mirror_error: Optional[str] = None
+    # Vercel Serverless 支持：内存文件存储
+    memory_files: Optional[Dict[str, bytes]] = None  # {filename: content}
 
 class ConfigPreProcessor:
     """配置文件预处理器主类"""
@@ -127,7 +129,8 @@ class ConfigPreProcessor:
                     convert_format: bool = True,
                     chunk: bool = True,
                     extract_metadata: bool = True,
-                    original_filename: Optional[str] = None) -> ProcessingResult:
+                    original_filename: Optional[str] = None,
+                    memory_mode: bool = False) -> ProcessingResult:
         """
         处理单个配置文件
 
@@ -138,6 +141,7 @@ class ConfigPreProcessor:
             chunk: 是否分块
             extract_metadata: 是否提取元数据
             original_filename: 原始文件名（可选，用于输出目录命名）
+            memory_mode: Vercel Serverless 模式 - 不写磁盘，内存返回 (默认False)
 
         Returns:
             处理结果
@@ -280,7 +284,31 @@ class ConfigPreProcessor:
             logger.info(f"✅ 文件处理完成: {file_path}")
             logger.info(f"   处理时间: {processing_time:.2f} 秒")
             logger.info(f"   输出目录: {file_output_dir}")
-            
+
+            # Vercel Serverless 模式：读取所有文件到内存
+            memory_files = None
+            if memory_mode:
+                logger.info("🔄 Vercel 模式：读取文件到内存...")
+                memory_files = {}
+                for file_path_str in processed_files:
+                    file_path_obj = Path(file_path_str)
+
+                    # 处理目录（chunks）
+                    if file_path_obj.is_dir():
+                        # 读取目录下所有文件
+                        for chunk_file in file_path_obj.rglob('*'):
+                            if chunk_file.is_file():
+                                relative_name = chunk_file.relative_to(file_output_dir)
+                                with open(chunk_file, 'rb') as f:
+                                    memory_files[str(relative_name)] = f.read()
+                    # 处理单个文件
+                    elif file_path_obj.is_file():
+                        filename = file_path_obj.name
+                        with open(file_path_obj, 'rb') as f:
+                            memory_files[filename] = f.read()
+
+                logger.info(f"  ✓ 已读取 {len(memory_files)} 个文件到内存")
+
             return ProcessingResult(
                 success=True,
                 file_path=str(file_path),
@@ -296,7 +324,8 @@ class ConfigPreProcessor:
                 mirrored_output_directory=mirror_info.get('mirror_dir'),
                 mirrored_files=mirror_info.get('mirror_files'),
                 used_output_fallback=self.using_output_fallback,
-                mirror_error=mirror_info.get('error')
+                mirror_error=mirror_info.get('error'),
+                memory_files=memory_files  # Vercel 模式返回内存文件
             )
             
         except Exception as e:
