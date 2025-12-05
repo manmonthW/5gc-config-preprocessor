@@ -223,7 +223,8 @@ class handler(BaseHTTPRequestHandler):
                         desensitize=options.get('desensitize', True),
                         convert_format=options.get('convert_format', True),
                         chunk=options.get('chunk', False),
-                        extract_metadata=options.get('extract_metadata', True)
+                        extract_metadata=options.get('extract_metadata', True),
+                        original_filename=filename
                     )
                     
                     if DEBUG_AVAILABLE:

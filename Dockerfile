@@ -22,8 +22,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # 复制项目文件
 COPY src/ ./src/
+COPY api/ ./api/
+COPY public/ ./public/
+COPY debug/ ./debug/
 COPY config.yaml .
 COPY quick_start.py .
+COPY start_server.py .
 
 # 创建必要的目录
 RUN mkdir -p /app/output /app/logs /app/temp /app/data
@@ -41,11 +45,8 @@ RUN useradd -m -u 1000 processor && \
 # 切换到非root用户
 USER processor
 
-# 暴露端口（如果需要API服务）
-EXPOSE 8080
+# 暴露端口（API服务）
+EXPOSE 8000
 
-# 设置入口点
-ENTRYPOINT ["python", "quick_start.py"]
-
-# 默认命令（显示帮助）
-CMD ["--help"]
+# 默认启动API服务器
+CMD ["python", "start_server.py"]

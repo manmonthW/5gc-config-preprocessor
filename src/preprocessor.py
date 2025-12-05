@@ -122,21 +122,23 @@ class ConfigPreProcessor:
             )
             return fallback_base, fallback_dir, True
     
-    def process_file(self, file_path: str, 
+    def process_file(self, file_path: str,
                     desensitize: bool = True,
                     convert_format: bool = True,
                     chunk: bool = True,
-                    extract_metadata: bool = True) -> ProcessingResult:
+                    extract_metadata: bool = True,
+                    original_filename: Optional[str] = None) -> ProcessingResult:
         """
         处理单个配置文件
-        
+
         Args:
             file_path: 文件路径
             desensitize: 是否脱敏
             convert_format: 是否转换格式
             chunk: 是否分块
             extract_metadata: 是否提取元数据
-            
+            original_filename: 原始文件名（可选，用于输出目录命名）
+
         Returns:
             处理结果
         """
@@ -154,14 +156,23 @@ class ConfigPreProcessor:
             
             # 获取文件信息
             file_size_mb = file_path.stat().st_size / (1024 * 1024)
-            logger.info(f"开始处理文件: {file_path} (大小: {file_size_mb:.2f} MB)")
+
+            # 确定显示名称
+            display_name = original_filename if original_filename else file_path.name
+            logger.info(f"开始处理文件: {display_name} (大小: {file_size_mb:.2f} MB)")
 
             # 读取原始内容（保持格式）
             original_text = self.converter.read_file(str(file_path))
             detected_format = self.converter.detect_format(str(file_path))
 
             # 创建文件专属输出目录
-            file_output_dir = self.output_dir / file_path.stem
+            # 如果提供了原始文件名，使用原始文件名；否则使用当前文件名
+            if original_filename:
+                output_dir_name = Path(original_filename).stem
+            else:
+                output_dir_name = file_path.stem
+
+            file_output_dir = self.output_dir / output_dir_name
             file_output_dir.mkdir(exist_ok=True)
 
             unified = None
